@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { CreatePurchaseInput, UpdatePurchaseInput } from '@/lib/types'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function createPurchase(input: CreatePurchaseInput) {
   const supabase = await createClient()
@@ -59,7 +60,7 @@ export async function createPurchase(input: CreatePurchaseInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/purchases')
@@ -126,7 +127,7 @@ export async function updatePurchase(input: UpdatePurchaseInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/purchases')
@@ -159,7 +160,7 @@ export async function deletePurchase(purchaseId: string) {
     .eq('id', purchaseId)
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/purchases')

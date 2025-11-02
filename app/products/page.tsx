@@ -74,7 +74,7 @@ export default async function ProductsPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
             <div className="text-sm text-red-800">
-              <strong>Error loading products:</strong> {error.message}
+              <strong>Error loading products:</strong> {typeof error === 'string' ? error : error?.message || 'Unknown error'}
             </div>
           </div>
         )}

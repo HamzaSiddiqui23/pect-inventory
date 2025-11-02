@@ -18,7 +18,7 @@ export default async function ReportsPage() {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role, project_id')
+    .select('*')
     .eq('id', user.id)
     .single()
 

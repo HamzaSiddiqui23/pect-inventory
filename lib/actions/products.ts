@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { CreateProductInput, UpdateProductInput } from '@/lib/types'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function createProduct(input: CreateProductInput) {
   const supabase = await createClient()
@@ -37,7 +38,7 @@ export async function createProduct(input: CreateProductInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/products')
@@ -79,7 +80,7 @@ export async function updateProduct(input: UpdateProductInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/products')
@@ -110,7 +111,7 @@ export async function deleteProduct(productId: string) {
     .eq('id', productId)
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/products')

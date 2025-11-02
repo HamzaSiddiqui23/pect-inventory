@@ -72,7 +72,7 @@ export default async function CategoriesPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
             <div className="text-sm text-red-800">
-              <strong>Error loading categories:</strong> {error.message}
+              <strong>Error loading categories</strong>
             </div>
           </div>
         )}

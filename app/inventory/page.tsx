@@ -5,6 +5,7 @@ import { getStores } from '@/lib/actions/purchases'
 import Image from 'next/image'
 import LogoutButton from '@/app/components/LogoutButton'
 import InventoryView from '@/app/components/InventoryView'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export default async function InventoryPage() {
   const supabase = await createClient()
@@ -86,7 +87,7 @@ export default async function InventoryPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
             <div className="text-sm text-red-800">
-              <strong>Error loading inventory:</strong> {error}
+              <strong>Error loading inventory:</strong> {getErrorMessage(error)}
             </div>
           </div>
         )}

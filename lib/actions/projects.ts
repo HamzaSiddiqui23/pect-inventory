@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { CreateProjectInput, UpdateProjectInput } from '@/lib/types'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function createProject(input: CreateProjectInput) {
   const supabase = await createClient()
@@ -34,7 +35,7 @@ export async function createProject(input: CreateProjectInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/projects')
@@ -73,7 +74,7 @@ export async function updateProject(input: UpdateProjectInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/projects')
@@ -104,7 +105,7 @@ export async function deleteProject(projectId: string) {
     .eq('id', projectId)
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/projects')

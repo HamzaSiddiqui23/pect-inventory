@@ -35,7 +35,7 @@ export default function LoginPage() {
       })
 
       if (error) {
-        setError(error.message)
+        setError(typeof error === 'string' ? error : error?.message || 'Failed to sign in')
         setLoading(false)
         return
       }

@@ -75,7 +75,7 @@ export default async function PurchasesPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
             <div className="text-sm text-red-800">
-              <strong>Error loading purchases:</strong> {error.message}
+              <strong>Error loading purchases:</strong> {typeof error === 'string' ? error : error?.message || 'Unknown error'}
             </div>
           </div>
         )}

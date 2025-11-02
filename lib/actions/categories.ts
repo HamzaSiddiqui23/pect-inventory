@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { CreateCategoryInput, UpdateCategoryInput } from '@/lib/types'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function createCategory(input: CreateCategoryInput) {
   const supabase = await createClient()
@@ -32,7 +33,7 @@ export async function createCategory(input: CreateCategoryInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/categories')
@@ -69,7 +70,7 @@ export async function updateCategory(input: UpdateCategoryInput) {
     .single()
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/categories')
@@ -100,7 +101,7 @@ export async function deleteCategory(categoryId: string) {
     .eq('id', categoryId)
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/categories')

@@ -6,6 +6,7 @@ import { getInventory } from '@/lib/actions/inventory'
 import Image from 'next/image'
 import LogoutButton from '@/app/components/LogoutButton'
 import IssuesList from '@/app/components/IssuesList'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export default async function IssuesPage() {
   const supabase = await createClient()
@@ -20,7 +21,7 @@ export default async function IssuesPage() {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role, project_id')
+    .select('*')
     .eq('id', user.id)
     .single()
 
@@ -75,7 +76,7 @@ export default async function IssuesPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
             <div className="text-sm text-red-800">
-              <strong>Error loading issues:</strong> {error.message}
+              <strong>Error loading issues:</strong> {getErrorMessage(error)}
             </div>
           </div>
         )}

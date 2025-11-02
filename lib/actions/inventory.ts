@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { InventoryItem } from '@/lib/types'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function getInventory(storeId?: string, productId?: string) {
   const supabase = await createClient()
@@ -97,7 +98,7 @@ export async function getInventoryItem(storeId: string, productId: string) {
     .single()
 
   if (error) {
-    return { data: null, error: error.message }
+    return { data: null, error: getErrorMessage(error) }
   }
 
   // Get average cost

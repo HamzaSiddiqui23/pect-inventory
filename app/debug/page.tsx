@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
 import LogoutButton from '@/app/components/LogoutButton'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export default async function DebugPage() {
   const supabase = await createClient()
@@ -77,10 +78,10 @@ export default async function DebugPage() {
             {profileError ? (
               <div className="bg-red-50 p-4 rounded border border-red-200">
                 <p className="text-sm text-red-800">
-                  <strong>Error:</strong> {profileError.message}
+                  <strong>Error:</strong> {getErrorMessage(profileError)}
                 </p>
                 <p className="text-sm text-red-600 mt-2">
-                  <strong>Error Code:</strong> {profileError.code || 'N/A'}
+                  <strong>Error Code:</strong> {(profileError as any)?.code || 'N/A'}
                 </p>
                 <p className="text-sm text-red-600 mt-2">
                   <strong>Error Details:</strong> {JSON.stringify(profileError, null, 2)}
@@ -118,7 +119,7 @@ export default async function DebugPage() {
             {usersError ? (
               <div className="bg-red-50 p-4 rounded border border-red-200">
                 <p className="text-sm text-red-800">
-                  <strong>Error:</strong> {usersError.message}
+                  <strong>Error:</strong> {getErrorMessage(usersError)}
                 </p>
                 <p className="text-sm text-red-600 mt-2">
                   Details: {JSON.stringify(usersError, null, 2)}
@@ -139,7 +140,7 @@ export default async function DebugPage() {
             {projectsError ? (
               <div className="bg-red-50 p-4 rounded border border-red-200">
                 <p className="text-sm text-red-800">
-                  <strong>Error:</strong> {projectsError.message}
+                  <strong>Error:</strong> {getErrorMessage(projectsError)}
                 </p>
                 <p className="text-sm text-red-600 mt-2">
                   Details: {JSON.stringify(projectsError, null, 2)}

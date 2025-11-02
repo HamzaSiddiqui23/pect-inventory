@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { CreateIssueInput } from '@/lib/types'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function createIssue(input: CreateIssueInput) {
   const supabase = await createClient()
@@ -89,7 +90,7 @@ export async function createIssue(input: CreateIssueInput) {
   // Note: Inventory is automatically updated by trigger
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/issues')
@@ -199,7 +200,7 @@ export async function getIssueableStores() {
   const { data: fromStores, error: fromError } = await fromStoresQuery
 
   if (fromError) {
-    return { data: null, error: fromError.message }
+    return { data: null, error: getErrorMessage(fromError) }
   }
 
   // Get stores the user can issue to (for central store issuing to project stores)

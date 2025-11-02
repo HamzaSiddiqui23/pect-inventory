@@ -4,6 +4,7 @@ import { getProjects } from '@/lib/actions/projects'
 import Image from 'next/image'
 import LogoutButton from '@/app/components/LogoutButton'
 import ProjectsList from '@/app/components/ProjectsList'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export default async function ProjectsPage() {
   const supabase = await createClient()
@@ -72,7 +73,7 @@ export default async function ProjectsPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
             <div className="text-sm text-red-800">
-              <strong>Error loading projects:</strong> {error}
+              <strong>Error loading projects:</strong> {getErrorMessage(error)}
             </div>
           </div>
         )}

@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export type ReportPeriod = 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'lifetime'
 
@@ -102,7 +103,7 @@ export async function getPurchaseReport(period: ReportPeriod, storeId?: string) 
   const { data, error } = await query
 
   if (error) {
-    return { data: null, error: typeof error === 'string' ? error : error.message }
+    return { data: null, error: getErrorMessage(error) }
   }
 
   // Calculate summary statistics
@@ -181,7 +182,7 @@ export async function getIssueReport(period: ReportPeriod, storeId?: string) {
   const { data, error } = await query
 
   if (error) {
-    return { data: null, error: typeof error === 'string' ? error : error.message }
+    return { data: null, error: getErrorMessage(error) }
   }
 
   // Calculate summary statistics
@@ -253,7 +254,7 @@ export async function getInventoryCostReport(storeId?: string) {
   const { data, error } = await query
 
   if (error) {
-    return { data: null, error: typeof error === 'string' ? error : error.message }
+    return { data: null, error: getErrorMessage(error) }
   }
 
   // Calculate average costs and totals for each item

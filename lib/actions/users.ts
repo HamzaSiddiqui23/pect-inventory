@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import type { CreateUserInput, UpdateUserInput } from '@/lib/types'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function createUser(input: CreateUserInput) {
   const supabase = await createClient()
@@ -39,7 +40,7 @@ export async function createUser(input: CreateUserInput) {
     })
 
     if (authError || !authData.user) {
-      return { error: authError?.message || 'Failed to create user' }
+      return { error: authError ? getErrorMessage(authError) : 'Failed to create user' }
     }
 
     // Update user profile with role and project
@@ -53,13 +54,13 @@ export async function createUser(input: CreateUserInput) {
       .eq('id', authData.user.id)
 
     if (profileError) {
-      return { error: profileError.message }
+      return { error: getErrorMessage(profileError) }
     }
 
     revalidatePath('/users')
     return { data: authData.user, error: null }
   } catch (error: any) {
-    return { error: error.message || 'Failed to create user' }
+    return { error: getErrorMessage(error) || 'Failed to create user' }
   }
 }
 
@@ -92,7 +93,7 @@ export async function updateUser(input: UpdateUserInput) {
     .eq('id', input.id)
 
   if (error) {
-    return { error: error.message }
+    return { error: getErrorMessage(error) }
   }
 
   revalidatePath('/users')
@@ -128,7 +129,7 @@ export async function resetUserPassword(userId: string, newPassword: string) {
     })
 
     if (error) {
-      return { error: error.message }
+      return { error: getErrorMessage(error) }
     }
 
     return { error: null }
@@ -160,7 +161,7 @@ export async function deleteUser(userId: string) {
     const { error } = await adminClient.auth.admin.deleteUser(userId)
 
     if (error) {
-      return { error: error.message }
+      return { error: getErrorMessage(error) }
     }
 
     revalidatePath('/users')
