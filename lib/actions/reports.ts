@@ -102,7 +102,7 @@ export async function getPurchaseReport(period: ReportPeriod, storeId?: string) 
   const { data, error } = await query
 
   if (error) {
-    return { data: null, error: error.message }
+    return { data: null, error: typeof error === 'string' ? error : error.message }
   }
 
   // Calculate summary statistics
@@ -181,7 +181,7 @@ export async function getIssueReport(period: ReportPeriod, storeId?: string) {
   const { data, error } = await query
 
   if (error) {
-    return { data: null, error: error.message }
+    return { data: null, error: typeof error === 'string' ? error : error.message }
   }
 
   // Calculate summary statistics
@@ -253,7 +253,7 @@ export async function getInventoryCostReport(storeId?: string) {
   const { data, error } = await query
 
   if (error) {
-    return { data: null, error: error.message }
+    return { data: null, error: typeof error === 'string' ? error : error.message }
   }
 
   // Calculate average costs and totals for each item
