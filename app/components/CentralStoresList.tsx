@@ -1,19 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { createCategory, updateCategory, deleteCategory } from '@/lib/actions/categories'
+import { createCentralStore, updateCentralStore, deleteCentralStore } from '@/lib/actions/stores'
 import { getErrorMessage } from '@/lib/utils/errors'
-import type { Category } from '@/lib/types'
+import type { Store } from '@/lib/types'
 
-export default function CategoriesList({ initialCategories }: { initialCategories: Category[] }) {
-  const [categories, setCategories] = useState(initialCategories)
+export default function CentralStoresList({ initialStores }: { initialStores: Store[] }) {
+  const [stores, setStores] = useState(initialStores)
   const [showModal, setShowModal] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const [editingStore, setEditingStore] = useState<Store | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -21,11 +20,16 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
     setError(null)
     setLoading(true)
 
-    if (editingCategory) {
-      const result = await updateCategory({
-        id: editingCategory.id,
+    if (!formData.name.trim()) {
+      setError('Store name is required')
+      setLoading(false)
+      return
+    }
+
+    if (editingStore) {
+      const result = await updateCentralStore({
+        id: editingStore.id,
         name: formData.name || undefined,
-        description: formData.description || undefined,
       })
 
       if (result.error) {
@@ -34,9 +38,8 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
         return
       }
     } else {
-      const result = await createCategory({
+      const result = await createCentralStore({
         name: formData.name,
-        description: formData.description || undefined,
       })
 
       if (result.error) {
@@ -49,27 +52,20 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
     window.location.reload()
   }
 
-  const handleEdit = (category: Category) => {
-    setEditingCategory(category)
+  const handleEdit = (store: Store) => {
+    setEditingStore(store)
     setFormData({
-      name: category.name,
-      description: category.description || '',
+      name: store.name,
     })
     setShowModal(true)
   }
 
-  const resetForm = () => {
-    setEditingCategory(null)
-    setFormData({ name: '', description: '' })
-    setError(null)
-  }
-
-  const handleDelete = async (categoryId: string) => {
-    if (!confirm('Are you sure you want to delete this category? Products in this category will need to be reassigned.')) {
+  const handleDelete = async (storeId: string) => {
+    if (!confirm('Are you sure you want to delete this central store? This action cannot be undone if the store has inventory.')) {
       return
     }
 
-    const result = await deleteCategory(categoryId)
+    const result = await deleteCentralStore(storeId)
     if (result.error) {
       alert(result.error)
       return
@@ -78,11 +74,20 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
     window.location.reload()
   }
 
+  const resetForm = () => {
+    setEditingStore(null)
+    setFormData({ name: '' })
+    setError(null)
+  }
+
   return (
     <div>
       <div className="mb-4 flex justify-end">
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            resetForm()
+            setShowModal(true)
+          }}
           className="rounded-md px-4 py-2 text-sm font-semibold text-white transition-colors"
           style={{ backgroundColor: '#0067ac' }}
           onMouseEnter={(e) => {
@@ -92,15 +97,15 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
             e.currentTarget.style.backgroundColor = '#0067ac'
           }}
         >
-          Add Category
+          Add Central Store
         </button>
       </div>
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4" style={{ color: '#0067ac' }}>
-              {editingCategory ? 'Edit Category' : 'Add New Category'}
+              {editingStore ? 'Edit Central Store' : 'Add New Central Store'}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
@@ -110,7 +115,7 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category Name *
+                  Store Name *
                 </label>
                 <input
                   type="text"
@@ -118,19 +123,7 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                  placeholder="e.g., Electrical, Mechanical"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                  placeholder="Optional description"
+                  placeholder="e.g., Central Store - Karachi, Central Store - Islamabad"
                 />
               </div>
               <div className="flex gap-3 pt-4">
@@ -150,7 +143,7 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
                   className="flex-1 rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   style={{ backgroundColor: '#0067ac' }}
                 >
-                  {loading ? (editingCategory ? 'Updating...' : 'Creating...') : (editingCategory ? 'Update Category' : 'Create Category')}
+                  {loading ? (editingStore ? 'Updating...' : 'Creating...') : (editingStore ? 'Update Store' : 'Create Store')}
                 </button>
               </div>
             </form>
@@ -163,10 +156,10 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Name
+                Store Name
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Description
+                Created At
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
@@ -174,30 +167,30 @@ export default function CategoriesList({ initialCategories }: { initialCategorie
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {categories.length === 0 ? (
+            {stores.length === 0 ? (
               <tr>
                 <td colSpan={3} className="px-6 py-4 text-center text-sm text-gray-500">
-                  No categories found. Create your first category.
+                  No central stores found. Create your first central store.
                 </td>
               </tr>
             ) : (
-              categories.map((category) => (
-                <tr key={category.id}>
+              stores.map((store) => (
+                <tr key={store.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {category.name}
+                    {store.name}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {category.description || '-'}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {new Date(store.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
-                      onClick={() => handleEdit(category)}
+                      onClick={() => handleEdit(store)}
                       className="text-[#0067ac] hover:text-[#005a94] mr-4"
                     >
                       Edit
                     </button>
                     <button
-                      onClick={() => handleDelete(category.id)}
+                      onClick={() => handleDelete(store.id)}
                       className="text-red-600 hover:text-red-900"
                     >
                       Delete

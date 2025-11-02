@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { getPurchaseReport, getIssueReport, getInventoryCostReport, type ReportPeriod } from '@/lib/actions/reports'
+import { getErrorMessage } from '@/lib/utils/errors'
 import type { Store, UserProfile } from '@/lib/types'
 
 export default function ReportsView({ 
@@ -13,6 +14,7 @@ export default function ReportsView({
 }) {
   const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriod>('monthly')
   const [selectedStoreId, setSelectedStoreId] = useState<string>('')
+  const [issuedToFilter, setIssuedToFilter] = useState<string>('')
   const [activeTab, setActiveTab] = useState<'purchases' | 'issues' | 'inventory'>('purchases')
   
   const [purchaseData, setPurchaseData] = useState<any>(null)
@@ -31,21 +33,21 @@ export default function ReportsView({
       if (activeTab === 'purchases') {
         const result = await getPurchaseReport(selectedPeriod, selectedStoreId || undefined)
         if (result.error) {
-          setError(result.error)
+          setError(getErrorMessage(result.error))
         } else {
           setPurchaseData(result)
         }
       } else if (activeTab === 'issues') {
-        const result = await getIssueReport(selectedPeriod, selectedStoreId || undefined)
+        const result = await getIssueReport(selectedPeriod, selectedStoreId || undefined, issuedToFilter || undefined)
         if (result.error) {
-          setError(result.error)
+          setError(getErrorMessage(result.error))
         } else {
           setIssueData(result)
         }
       } else if (activeTab === 'inventory') {
         const result = await getInventoryCostReport(selectedStoreId || undefined)
         if (result.error) {
-          setError(result.error)
+          setError(getErrorMessage(result.error))
         } else {
           setInventoryData(result)
         }
@@ -60,7 +62,7 @@ export default function ReportsView({
   // Load reports on mount and when filters change
   useEffect(() => {
     loadReports()
-  }, [activeTab, selectedPeriod, selectedStoreId])
+  }, [activeTab, selectedPeriod, selectedStoreId, issuedToFilter])
 
   // Load when tab, period, or store changes
   const handleTabChange = (tab: 'purchases' | 'issues' | 'inventory') => {
@@ -183,7 +185,7 @@ export default function ReportsView({
     <div className="space-y-6">
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-md border p-4" style={{ borderColor: '#E77817' }}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${activeTab === 'issues' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Report Type
@@ -209,6 +211,7 @@ export default function ReportsView({
                 onChange={(e) => handlePeriodChange(e.target.value as ReportPeriod)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
               >
+                <option value="today">Today</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
                 <option value="quarterly">Quarterly</option>
@@ -235,6 +238,21 @@ export default function ReportsView({
               ))}
             </select>
           </div>
+
+          {activeTab === 'issues' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Issued To (Optional)
+              </label>
+              <input
+                type="text"
+                value={issuedToFilter}
+                onChange={(e) => setIssuedToFilter(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                placeholder="Filter by recipient name"
+              />
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex gap-3">

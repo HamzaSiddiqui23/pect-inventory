@@ -7,41 +7,117 @@ export default function InventoryView({
   initialInventory, 
   stores, 
   isAdmin,
-  currentStoreId 
+  currentStoreId,
+  canViewAllStores = false
 }: { 
   initialInventory: InventoryItem[]
   stores: Store[]
   isAdmin: boolean
   currentStoreId?: string
+  canViewAllStores?: boolean
 }) {
   const [selectedStoreId, setSelectedStoreId] = useState<string | undefined>(currentStoreId)
+  const [searchName, setSearchName] = useState<string>('')
+  const [searchCategory, setSearchCategory] = useState<string>('')
 
-  // Filter inventory by selected store (client-side)
-  const filteredInventory = selectedStoreId 
-    ? initialInventory.filter(item => item.store_id === selectedStoreId)
-    : initialInventory
+  // Get unique categories from inventory
+  const categories = Array.from(
+    new Set(
+      initialInventory
+        .map(item => item.product?.category?.name)
+        .filter((name): name is string => !!name)
+    )
+  ).sort()
+
+  // Filter inventory by selected store, product name, and category (client-side)
+  const filteredInventory = initialInventory.filter(item => {
+    // Store filter
+    if (selectedStoreId && item.store_id !== selectedStoreId) {
+      return false
+    }
+    
+    // Product name filter
+    if (searchName && !item.product?.name?.toLowerCase().includes(searchName.toLowerCase())) {
+      return false
+    }
+    
+    // Category filter
+    if (searchCategory && item.product?.category?.name !== searchCategory) {
+      return false
+    }
+    
+    return true
+  })
 
   return (
     <div>
-      {isAdmin && stores.length > 0 && (
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Store
-          </label>
-          <select
-            value={selectedStoreId || ''}
-            onChange={(e) => setSelectedStoreId(e.target.value || undefined)}
-            className="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-          >
-            <option value="">All Stores</option>
-            {stores.map((store) => (
-              <option key={store.id} value={store.id}>
-                {store.name} ({store.type === 'central' ? 'Central' : 'Project'})
-              </option>
-            ))}
-          </select>
+      {/* Search and Filter Section */}
+      <div className="mb-6 bg-white rounded-lg shadow-md border p-4" style={{ borderColor: '#E77817' }}>
+        <div className={`grid grid-cols-1 gap-4 ${(isAdmin || canViewAllStores) && stores.length > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+          {(isAdmin || canViewAllStores) && stores.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Filter by Store
+              </label>
+              <select
+                value={selectedStoreId || ''}
+                onChange={(e) => setSelectedStoreId(e.target.value || undefined)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+              >
+                <option value="">All Stores</option>
+                {stores.map((store) => (
+                  <option key={store.id} value={store.id}>
+                    {store.name} ({store.type === 'central' ? 'Central' : 'Project'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Search by Product Name
+            </label>
+            <input
+              type="text"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+              placeholder="Enter product name..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Filter by Category
+            </label>
+            <select
+              value={searchCategory}
+              onChange={(e) => setSearchCategory(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            >
+              <option value="">All Categories</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-      )}
+        {(searchName || searchCategory || selectedStoreId) && (
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => {
+                setSearchName('')
+                setSearchCategory('')
+                setSelectedStoreId(undefined)
+              }}
+              className="text-sm text-gray-600 hover:text-gray-900 underline"
+            >
+              Clear Filters
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="rounded-lg bg-white shadow-md border overflow-hidden" style={{ borderColor: '#E77817' }}>
           <table className="min-w-full divide-y divide-gray-200">
@@ -79,32 +155,44 @@ export default function InventoryView({
                   </td>
                 </tr>
               ) : (
-                filteredInventory.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                filteredInventory.map((item) => {
+                  const needsRestock = item.product?.restock_level !== undefined && 
+                                       item.product.restock_level > 0 && 
+                                       item.quantity <= item.product.restock_level
+                  return (
+                  <tr 
+                    key={item.id}
+                    className={needsRestock ? 'bg-red-50 border-l-4' : ''}
+                    style={needsRestock ? { borderLeftColor: '#dc2626' } : {}}
+                  >
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
                       {item.product?.name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-500'}`}>
                       {item.product?.category?.name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-500'}`}>
                       {item.store?.name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
                       {item.quantity} {item.product?.unit || ''}
+                      {needsRestock && (
+                        <span className="ml-2 text-xs font-bold text-red-600">(Low Stock)</span>
+                      )}
                     </td>
                     {isAdmin && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-900'}`}>
                         PKR {item.average_cost?.toFixed(2) || '0.00'}
                       </td>
                     )}
                     {isAdmin && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
                         PKR {((item.average_cost || 0) * item.quantity).toFixed(2)}
                       </td>
                     )}
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>

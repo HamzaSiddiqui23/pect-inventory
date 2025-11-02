@@ -33,6 +33,7 @@ export async function createIssue(input: CreateIssueInput) {
     .from('stores')
     .select('type, project_id')
     .eq('id', input.from_store_id)
+    .is('deleted_at', null)
     .single()
 
   if (!sourceStore) {
@@ -98,7 +99,7 @@ export async function createIssue(input: CreateIssueInput) {
   return { data, error: null }
 }
 
-export async function getIssues(storeId?: string) {
+export async function getIssues(storeId?: string, productId?: string, startDate?: string, endDate?: string) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -135,6 +136,7 @@ export async function getIssues(storeId?: string) {
         category:categories(*)
       )
     `)
+    .is('deleted_at', null)
     .order('issue_date', { ascending: false })
     .order('created_at', { ascending: false })
 
@@ -147,6 +149,7 @@ export async function getIssues(storeId?: string) {
       .from('stores')
       .select('id')
       .eq('project_id', profile.project_id)
+      .is('deleted_at', null)
       .single()
 
     if (store) {
@@ -154,6 +157,20 @@ export async function getIssues(storeId?: string) {
     }
   } else if (!isAdmin && profile.role === 'central_store_manager') {
     // Central store managers can see all issues (no filter needed, but they won't see prices)
+  }
+
+  // Filter by product if provided
+  if (productId) {
+    query = query.eq('product_id', productId)
+  }
+
+  // Filter by date range if provided
+  if (startDate) {
+    query = query.gte('issue_date', startDate)
+  }
+
+  if (endDate) {
+    query = query.lte('issue_date', endDate)
   }
 
   const { data, error } = await query
@@ -189,6 +206,7 @@ export async function getIssueableStores() {
       *,
       project:projects(*)
     `)
+    .is('deleted_at', null)
 
   if (!isAdmin && !isCentralStoreManager) {
     // Project store managers can only issue from their store
@@ -203,10 +221,10 @@ export async function getIssueableStores() {
     return { data: null, error: getErrorMessage(fromError) }
   }
 
-  // Get stores the user can issue to (for central store issuing to project stores)
+  // Get stores the user can issue to (for central stores issuing to project stores)
   let toStores: any[] = []
   if (isAdmin || isCentralStoreManager) {
-    // Central store can issue to project stores
+    // Any central store can issue to project stores
     const { data: projectStores, error: toError } = await supabase
       .from('stores')
       .select(`
@@ -214,6 +232,7 @@ export async function getIssueableStores() {
         project:projects(*)
       `)
       .eq('type', 'project')
+      .is('deleted_at', null)
 
     if (!toError && projectStores) {
       toStores = projectStores

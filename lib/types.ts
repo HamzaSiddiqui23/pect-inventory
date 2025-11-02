@@ -36,6 +36,7 @@ export interface Product {
   name: string
   unit: UnitType
   description: string | null
+  restock_level: number
   created_at: string
   updated_at: string
   category?: Category
@@ -76,6 +77,7 @@ export interface InventoryItem {
   store?: Store
   product?: Product
   average_cost?: number
+  needsRestock?: boolean // Computed: quantity <= product.restock_level
 }
 
 export interface Issue {
@@ -142,6 +144,7 @@ export interface CreateProductInput {
   name: string
   unit: UnitType
   description?: string
+  restock_level?: number
 }
 
 export interface UpdateProductInput {
@@ -150,6 +153,7 @@ export interface UpdateProductInput {
   name?: string
   unit?: UnitType
   description?: string
+  restock_level?: number
 }
 
 export interface CreatePurchaseInput {

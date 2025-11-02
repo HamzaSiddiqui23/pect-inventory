@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createUser, updateUser, deleteUser, resetUserPassword } from '@/lib/actions/users'
+import { getErrorMessage } from '@/lib/utils/errors'
 import type { UserProfile, Project } from '@/lib/types'
 import type { UserRole } from '@/lib/types'
 
@@ -43,7 +44,7 @@ export default function UsersList({ initialUsers, projects = [] }: { initialUser
       })
 
       if (result.error) {
-        setError(result.error)
+        setError(getErrorMessage(result.error))
         setLoading(false)
         return
       }
@@ -57,7 +58,7 @@ export default function UsersList({ initialUsers, projects = [] }: { initialUser
       })
 
       if (result.error) {
-        setError(result.error)
+        setError(getErrorMessage(result.error))
         setLoading(false)
         return
       }

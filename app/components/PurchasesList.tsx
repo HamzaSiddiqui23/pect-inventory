@@ -1,18 +1,19 @@
 'use client'
 
-import { useState } from 'react'
-import { createPurchase, updatePurchase, deletePurchase } from '@/lib/actions/purchases'
+import { useState, useEffect } from 'react'
+import { createPurchase, updatePurchase, deletePurchase, getPurchases } from '@/lib/actions/purchases'
+import { getErrorMessage } from '@/lib/utils/errors'
 import type { Purchase, Product, Store } from '@/lib/types'
 
 export default function PurchasesList({ 
   initialPurchases, 
   products, 
-  centralStore,
+  centralStores,
   isAdmin 
 }: { 
   initialPurchases: Purchase[]
   products: Product[]
-  centralStore: Store | null
+  centralStores: Store[]
   isAdmin: boolean
 }) {
   const [purchases, setPurchases] = useState(initialPurchases)
@@ -20,7 +21,11 @@ export default function PurchasesList({
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [filterProductId, setFilterProductId] = useState<string>('')
+  const [filterStartDate, setFilterStartDate] = useState<string>('')
+  const [filterEndDate, setFilterEndDate] = useState<string>('')
   const [formData, setFormData] = useState({
+    store_id: '',
     product_id: '',
     quantity: '',
     unit_cost: '',
@@ -28,13 +33,40 @@ export default function PurchasesList({
     notes: '',
   })
 
+  // Filter purchases based on selected filters
+  useEffect(() => {
+    const loadFilteredPurchases = async () => {
+      // Only filter if any filter is set, otherwise use initial data
+      if (!filterProductId && !filterStartDate && !filterEndDate) {
+        setPurchases(initialPurchases)
+        return
+      }
+
+      setLoading(true)
+      const result = await getPurchases(
+        filterProductId || undefined,
+        undefined,
+        filterStartDate || undefined,
+        filterEndDate || undefined
+      )
+      if (result.error) {
+        setError(getErrorMessage(result.error))
+      } else {
+        setPurchases(result.data || [])
+      }
+      setLoading(false)
+    }
+    
+    loadFilteredPurchases()
+  }, [filterProductId, filterStartDate, filterEndDate, initialPurchases])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    if (!centralStore) {
-      setError('Central store not found')
+    if (!formData.store_id) {
+      setError('Please select a central store')
       setLoading(false)
       return
     }
@@ -57,6 +89,7 @@ export default function PurchasesList({
     if (editingPurchase && isAdmin) {
       const result = await updatePurchase({
         id: editingPurchase.id,
+        store_id: formData.store_id || undefined,
         product_id: formData.product_id || undefined,
         quantity,
         unit_cost,
@@ -65,13 +98,13 @@ export default function PurchasesList({
       })
 
       if (result.error) {
-        setError(result.error)
+        setError(getErrorMessage(result.error))
         setLoading(false)
         return
       }
     } else {
       const result = await createPurchase({
-        store_id: centralStore.id,
+        store_id: formData.store_id,
         product_id: formData.product_id,
         quantity,
         unit_cost,
@@ -80,7 +113,7 @@ export default function PurchasesList({
       })
 
       if (result.error) {
-        setError(result.error)
+        setError(getErrorMessage(result.error))
         setLoading(false)
         return
       }
@@ -92,6 +125,7 @@ export default function PurchasesList({
   const handleEdit = (purchase: Purchase) => {
     setEditingPurchase(purchase)
     setFormData({
+      store_id: purchase.store_id,
       product_id: purchase.product_id,
       quantity: purchase.quantity.toString(),
       unit_cost: purchase.unit_cost.toString(),
@@ -123,6 +157,7 @@ export default function PurchasesList({
   const resetForm = () => {
     setEditingPurchase(null)
     setFormData({
+      store_id: '',
       product_id: '',
       quantity: '',
       unit_cost: '',
@@ -134,6 +169,63 @@ export default function PurchasesList({
 
   return (
     <div>
+      {/* Filters */}
+      <div className="mb-4 bg-white rounded-lg shadow-md border p-4" style={{ borderColor: '#E77817' }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Filter by Product
+            </label>
+            <select
+              value={filterProductId}
+              onChange={(e) => setFilterProductId(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            >
+              <option value="">All Products</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name} ({product.category?.name})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Start Date
+            </label>
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              End Date
+            </label>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            />
+          </div>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => {
+              setFilterProductId('')
+              setFilterStartDate('')
+              setFilterEndDate('')
+            }}
+            className="text-sm text-gray-600 hover:text-gray-900 underline"
+          >
+            Clear Filters
+          </button>
+        </div>
+      </div>
+
       <div className="mb-4 flex justify-end">
         <button
           onClick={() => {
@@ -165,6 +257,25 @@ export default function PurchasesList({
                   <div className="text-sm text-red-800">{error}</div>
                 </div>
               )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Central Store *
+                </label>
+                <select
+                  required={!editingPurchase}
+                  value={formData.store_id}
+                  onChange={(e) => setFormData({ ...formData, store_id: e.target.value })}
+                  disabled={!!editingPurchase && !isAdmin}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac] disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select a central store</option>
+                  {centralStores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Product *
@@ -286,6 +397,9 @@ export default function PurchasesList({
                 Date
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Central Store
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Product
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -308,7 +422,7 @@ export default function PurchasesList({
           <tbody className="bg-white divide-y divide-gray-200">
             {purchases.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
                   No purchases found. Create your first purchase.
                 </td>
               </tr>
@@ -317,6 +431,9 @@ export default function PurchasesList({
                 <tr key={purchase.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {new Date(purchase.purchase_date).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {purchase.store?.name || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {purchase.product?.name || '-'}

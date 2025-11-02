@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getErrorMessage } from '@/lib/utils/errors'
 
-export type ReportPeriod = 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'lifetime'
+export type ReportPeriod = 'today' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'lifetime'
 
 interface DateRange {
   startDate: string
@@ -18,6 +18,10 @@ function getDateRange(period: ReportPeriod): DateRange {
   let startDate: Date
 
   switch (period) {
+    case 'today':
+      startDate = new Date(endDate)
+      startDate.setHours(0, 0, 0, 0) // Start of today
+      break
     case 'weekly':
       startDate = new Date(endDate)
       startDate.setDate(startDate.getDate() - 6) // Last 7 days (including today)
@@ -78,6 +82,7 @@ export async function getPurchaseReport(period: ReportPeriod, storeId?: string) 
         category:categories(*)
       )
     `)
+    .is('deleted_at', null)
     .gte('purchase_date', dateRange.startDate)
     .lte('purchase_date', dateRange.endDate)
     .order('purchase_date', { ascending: false })
@@ -91,6 +96,7 @@ export async function getPurchaseReport(period: ReportPeriod, storeId?: string) 
         .from('stores')
         .select('id')
         .eq('project_id', profile.project_id)
+        .is('deleted_at', null)
         .single()
 
       if (store) {
@@ -120,7 +126,7 @@ export async function getPurchaseReport(period: ReportPeriod, storeId?: string) 
   return { data, summary, error: null }
 }
 
-export async function getIssueReport(period: ReportPeriod, storeId?: string) {
+export async function getIssueReport(period: ReportPeriod, storeId?: string, issuedToName?: string) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -158,6 +164,7 @@ export async function getIssueReport(period: ReportPeriod, storeId?: string) {
         category:categories(*)
       )
     `)
+    .is('deleted_at', null)
     .gte('issue_date', dateRange.startDate)
     .lte('issue_date', dateRange.endDate)
     .order('issue_date', { ascending: false })
@@ -178,6 +185,11 @@ export async function getIssueReport(period: ReportPeriod, storeId?: string) {
     }
   }
   // Central store managers can see all issues (no filter)
+
+  // Filter by issued_to_name if provided
+  if (issuedToName) {
+    query = query.ilike('issued_to_name', `%${issuedToName}%`)
+  }
 
   const { data, error } = await query
 
@@ -244,6 +256,7 @@ export async function getInventoryCostReport(storeId?: string) {
       .from('stores')
       .select('id')
       .eq('project_id', profile.project_id)
+      .is('deleted_at', null)
       .single()
 
     if (store) {
@@ -326,6 +339,7 @@ export async function getStoresForReports() {
       *,
       project:projects(*)
     `)
+    .is('deleted_at', null)
     .order('type', { ascending: true })
     .order('name', { ascending: true })
 

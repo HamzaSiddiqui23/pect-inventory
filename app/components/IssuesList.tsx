@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createIssue } from '@/lib/actions/issues'
+import { createIssue, getIssues } from '@/lib/actions/issues'
 import { getInventory } from '@/lib/actions/inventory'
+import { getErrorMessage } from '@/lib/utils/errors'
 import type { Issue, Product, Store, UserProfile } from '@/lib/types'
 
 interface StoresData {
@@ -26,6 +27,9 @@ export default function IssuesList({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [availableInventory, setAvailableInventory] = useState<any[]>([])
+  const [filterProductId, setFilterProductId] = useState<string>('')
+  const [filterStartDate, setFilterStartDate] = useState<string>('')
+  const [filterEndDate, setFilterEndDate] = useState<string>('')
   const [formData, setFormData] = useState({
     from_store_id: '',
     to_store_id: '',
@@ -36,11 +40,38 @@ export default function IssuesList({
     notes: '',
   })
 
+  // Filter issues based on selected filters
+  useEffect(() => {
+    const loadFilteredIssues = async () => {
+      // Only filter if any filter is set, otherwise use initial data
+      if (!filterProductId && !filterStartDate && !filterEndDate) {
+        setIssues(initialIssues)
+        return
+      }
+
+      setLoading(true)
+      const result = await getIssues(
+        undefined,
+        filterProductId || undefined,
+        filterStartDate || undefined,
+        filterEndDate || undefined
+      )
+      if (result.error) {
+        setError(getErrorMessage(result.error))
+      } else {
+        setIssues(result.data || [])
+      }
+      setLoading(false)
+    }
+    
+    loadFilteredIssues()
+  }, [filterProductId, filterStartDate, filterEndDate, initialIssues])
+
   const isAdmin = userProfile.role === 'admin'
   const isCentralStoreManager = userProfile.role === 'central_store_manager'
   const selectedFromStore = storesData?.fromStores.find(s => s.id === formData.from_store_id)
   const isCentralStore = selectedFromStore?.type === 'central'
-  const canIssueToStore = isCentralStore && (isAdmin || isCentralStoreManager)
+  const canIssueToStore = isCentralStore && (isAdmin || isCentralStoreManager) // Any central store can issue to project stores
 
   // Load inventory when from_store and product are selected
   useEffect(() => {
@@ -119,7 +150,7 @@ export default function IssuesList({
     })
 
     if (result.error) {
-      setError(result.error)
+      setError(getErrorMessage(result.error))
       setLoading(false)
       return
     }
@@ -147,6 +178,63 @@ export default function IssuesList({
 
   return (
     <div>
+      {/* Filters */}
+      <div className="mb-4 bg-white rounded-lg shadow-md border p-4" style={{ borderColor: '#E77817' }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Filter by Product
+            </label>
+            <select
+              value={filterProductId}
+              onChange={(e) => setFilterProductId(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            >
+              <option value="">All Products</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name} ({product.category?.name})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Start Date
+            </label>
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              End Date
+            </label>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            />
+          </div>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => {
+              setFilterProductId('')
+              setFilterStartDate('')
+              setFilterEndDate('')
+            }}
+            className="text-sm text-gray-600 hover:text-gray-900 underline"
+          >
+            Clear Filters
+          </button>
+        </div>
+      </div>
+
       <div className="mb-4 flex justify-end">
         <button
           onClick={() => {

@@ -29,20 +29,33 @@ export default async function InventoryPage() {
   }
 
   const isAdmin = profile.role === 'admin'
+  const isCentralStoreManager = profile.role === 'central_store_manager'
+  const isProjectStoreManager = profile.role === 'project_store_manager'
   
-  // Get stores - admins see all, others see their own
+  // Get stores - filtered by role
   const { data: stores } = await getStores()
   
-  // Get inventory - admins get all, others get their store only
-  let storeId: string | undefined = undefined
-  
-  if (!isAdmin) {
-    // For non-admins, show their store only
-    storeId = stores?.[0]?.id
+  // Determine default store filter
+  let defaultStoreId: string | undefined = undefined
+  if (isProjectStoreManager && profile.project_id) {
+    // For project store managers, default to their own project store
+    const { data: projectStore } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('project_id', profile.project_id)
+      .eq('type', 'project')
+      .single()
+    
+    if (projectStore) {
+      defaultStoreId = projectStore.id
+    }
   }
-  // For admins, storeId is undefined to show all stores
   
-  const { data: inventory, error } = await getInventory(storeId)
+  // Get inventory - filtered by role
+  // Project store managers see: their store + central store
+  // Central store managers and admins see: all stores
+  // (but only admins see prices)
+  const { data: inventory, error } = await getInventory(defaultStoreId)
 
   return (
     <div className="min-h-screen bg-white">
@@ -96,7 +109,8 @@ export default async function InventoryPage() {
           initialInventory={inventory || []} 
           stores={stores || []} 
           isAdmin={isAdmin}
-          currentStoreId={storeId}
+          currentStoreId={defaultStoreId}
+          canViewAllStores={isAdmin || isCentralStoreManager || isProjectStoreManager}
         />
       </main>
     </div>

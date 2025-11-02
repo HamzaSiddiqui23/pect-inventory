@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createProject, deleteProject } from '@/lib/actions/projects'
+import { getErrorMessage } from '@/lib/utils/errors'
 import type { Project } from '@/lib/types'
 
 export default function ProjectsList({ initialProjects }: { initialProjects: Project[] }) {
@@ -29,7 +30,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
     })
 
     if (result.error) {
-      setError(result.error)
+      setError(getErrorMessage(result.error))
       setLoading(false)
       return
     }

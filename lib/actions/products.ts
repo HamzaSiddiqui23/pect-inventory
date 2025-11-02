@@ -30,6 +30,7 @@ export async function createProduct(input: CreateProductInput) {
       name: input.name,
       unit: input.unit,
       description: input.description || null,
+      restock_level: input.restock_level || 0,
     })
     .select(`
       *,
@@ -68,6 +69,7 @@ export async function updateProduct(input: UpdateProductInput) {
   if (input.name !== undefined) updateData.name = input.name
   if (input.unit !== undefined) updateData.unit = input.unit
   if (input.description !== undefined) updateData.description = input.description
+  if (input.restock_level !== undefined) updateData.restock_level = input.restock_level
 
   const { data, error } = await supabase
     .from('products')
@@ -107,7 +109,10 @@ export async function deleteProduct(productId: string) {
 
   const { error } = await supabase
     .from('products')
-    .delete()
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: user.id,
+    })
     .eq('id', productId)
 
   if (error) {
@@ -132,6 +137,7 @@ export async function getProducts() {
       *,
       category:categories(*)
     `)
+    .is('deleted_at', null)
     .order('name', { ascending: true })
 
   return { data, error }

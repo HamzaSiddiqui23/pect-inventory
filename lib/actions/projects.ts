@@ -101,7 +101,10 @@ export async function deleteProject(projectId: string) {
 
   const { error } = await supabase
     .from('projects')
-    .delete()
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: user.id,
+    })
     .eq('id', projectId)
 
   if (error) {
@@ -130,7 +133,11 @@ export async function getProjects() {
     return { data: null, error: 'User profile not found' }
   }
 
-  let query = supabase.from('projects').select('*').order('created_at', { ascending: false })
+  let query = supabase
+    .from('projects')
+    .select('*')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
 
   // Project store managers can only see their own project
   if (profile.role === 'project_store_manager' && profile.project_id) {

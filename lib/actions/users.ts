@@ -157,11 +157,28 @@ export async function deleteUser(userId: string) {
   }
 
   try {
-    const adminClient = createAdminClient()
-    const { error } = await adminClient.auth.admin.deleteUser(userId)
+    // Soft delete user profile (keep auth user for audit trail)
+    const { error: profileError } = await supabase
+      .from('user_profiles')
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: currentUser.id,
+      })
+      .eq('id', userId)
 
-    if (error) {
-      return { error: getErrorMessage(error) }
+    if (profileError) {
+      return { error: getErrorMessage(profileError) }
+    }
+
+    // Optionally disable auth user instead of deleting
+    // This keeps the audit trail intact while preventing login
+    const adminClient = createAdminClient()
+    const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
+      ban_duration: '876000h', // Effectively permanent ban (100 years)
+    })
+
+    if (authError) {
+      return { error: getErrorMessage(authError) }
     }
 
     revalidatePath('/users')
@@ -198,6 +215,7 @@ export async function getUsers() {
         name
       )
     `)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   return { data, error }

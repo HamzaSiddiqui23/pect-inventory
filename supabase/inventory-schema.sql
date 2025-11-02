@@ -107,15 +107,11 @@ CREATE TRIGGER on_project_created
   AFTER INSERT ON projects
   FOR EACH ROW EXECUTE FUNCTION public.create_project_store();
 
--- Create trigger to automatically create central store if it doesn't exist
--- Run this once manually or on first app start
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM stores WHERE type = 'central') THEN
-    INSERT INTO stores (name, type, project_id)
-    VALUES ('Central Store', 'central', NULL);
-  END IF;
-END $$;
+-- Multiple central stores can now be created manually via the UI
+-- The auto-create trigger has been removed to allow multiple central stores
+-- Use the Central Stores management page (admin only) to create stores like:
+-- - Central Store - Karachi
+-- - Central Store - Islamabad
 
 -- Create trigger to update inventory when purchase is made
 CREATE OR REPLACE FUNCTION public.update_inventory_on_purchase()

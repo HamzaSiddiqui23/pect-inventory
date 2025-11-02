@@ -19,6 +19,8 @@ export async function getInventory(storeId?: string, productId?: string) {
     .single()
 
   const isAdmin = profile?.role === 'admin'
+  const isCentralStoreManager = profile?.role === 'central_store_manager'
+  const isProjectStoreManager = profile?.role === 'project_store_manager'
 
   let query = supabase
     .from('inventory_items')
@@ -36,11 +38,39 @@ export async function getInventory(storeId?: string, productId?: string) {
   // Filter by store if provided
   if (storeId) {
     query = query.eq('store_id', storeId)
-  } else if (!isAdmin && profile?.role === 'project_store_manager' && profile.project_id) {
-    // Project store managers can only see their store
-    query = query.eq('store.project_id', profile.project_id)
+  } else if (isProjectStoreManager && profile.project_id) {
+    // Project store managers can see their own store + all central stores
+    // Get their project store
+    const { data: projectStore } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('project_id', profile.project_id)
+      .eq('type', 'project')
+      .is('deleted_at', null)
+      .single()
+    
+    // Get all central stores
+    const { data: centralStores } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('type', 'central')
+      .is('deleted_at', null)
+    
+    // Filter to show only their store and all central stores
+    const allowedStoreIds: string[] = []
+    if (projectStore) allowedStoreIds.push(projectStore.id)
+    if (centralStores) {
+      centralStores.forEach(store => allowedStoreIds.push(store.id))
+    }
+    
+    if (allowedStoreIds.length > 0) {
+      query = query.in('store_id', allowedStoreIds)
+    } else {
+      // No stores found, return empty result
+      query = query.eq('store_id', '00000000-0000-0000-0000-000000000000') // Non-existent ID
+    }
   }
-  // If admin and no storeId, show all stores
+  // Admins and central store managers see all stores
 
   // Filter by product if provided
   if (productId) {
@@ -53,10 +83,11 @@ export async function getInventory(storeId?: string, productId?: string) {
     return { data: null, error: error?.message || 'Failed to fetch inventory' }
   }
 
-  // Calculate average cost for each item (only for admins or if showing all stores)
+  // Calculate average cost for each item (only for admins - others don't see prices)
   const inventoryWithCosts = await Promise.all(
     data.map(async (item) => {
       let avgCost = 0
+      // Only admins can see costs/prices
       if (isAdmin) {
         const { data: avgCostData } = await supabase.rpc('get_average_cost', {
           p_store_id: item.store_id,

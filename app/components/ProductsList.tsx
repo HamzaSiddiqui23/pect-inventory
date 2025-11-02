@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createProduct, updateProduct, deleteProduct } from '@/lib/actions/products'
+import { getErrorMessage } from '@/lib/utils/errors'
 import type { Product, Category } from '@/lib/types'
 import type { UnitType } from '@/lib/types'
 
@@ -35,6 +36,7 @@ export default function ProductsList({ initialProducts, categories }: { initialP
     name: '',
     unit: 'pcs' as UnitType,
     description: '',
+    restock_level: '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -55,10 +57,11 @@ export default function ProductsList({ initialProducts, categories }: { initialP
         name: formData.name || undefined,
         unit: formData.unit || undefined,
         description: formData.description || undefined,
+        restock_level: formData.restock_level ? parseFloat(formData.restock_level) : undefined,
       })
 
       if (result.error) {
-        setError(result.error)
+        setError(getErrorMessage(result.error))
         setLoading(false)
         return
       }
@@ -74,10 +77,11 @@ export default function ProductsList({ initialProducts, categories }: { initialP
         name: formData.name,
         unit: formData.unit,
         description: formData.description || undefined,
+        restock_level: formData.restock_level ? parseFloat(formData.restock_level) : 0,
       })
 
       if (result.error) {
-        setError(result.error)
+        setError(getErrorMessage(result.error))
         setLoading(false)
         return
       }
@@ -93,13 +97,14 @@ export default function ProductsList({ initialProducts, categories }: { initialP
       name: product.name,
       unit: product.unit,
       description: product.description || '',
+      restock_level: product.restock_level.toString(),
     })
     setShowModal(true)
   }
 
   const resetForm = () => {
     setEditingProduct(null)
-    setFormData({ category_id: '', name: '', unit: 'pcs', description: '' })
+    setFormData({ category_id: '', name: '', unit: 'pcs', description: '', restock_level: '' })
     setError(null)
   }
 
@@ -207,6 +212,20 @@ export default function ProductsList({ initialProducts, categories }: { initialP
                   placeholder="Optional description"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Restock Level
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.restock_level}
+                  onChange={(e) => setFormData({ ...formData, restock_level: e.target.value })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                  placeholder="Minimum quantity before restock alert"
+                />
+              </div>
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -246,6 +265,9 @@ export default function ProductsList({ initialProducts, categories }: { initialP
                 Unit
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Restock Level
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Description
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -256,7 +278,7 @@ export default function ProductsList({ initialProducts, categories }: { initialP
           <tbody className="bg-white divide-y divide-gray-200">
             {products.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
                   No products found. Create your first product.
                 </td>
               </tr>
@@ -271,6 +293,9 @@ export default function ProductsList({ initialProducts, categories }: { initialP
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {product.unit}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {product.restock_level || 0}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
                     {product.description || '-'}

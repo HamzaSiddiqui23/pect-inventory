@@ -1,13 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getPurchases } from '@/lib/actions/purchases'
 import { getCentralStores } from '@/lib/actions/stores'
-import { getProducts } from '@/lib/actions/products'
 import Image from 'next/image'
 import LogoutButton from '@/app/components/LogoutButton'
-import PurchasesList from '@/app/components/PurchasesList'
+import CentralStoresList from '@/app/components/CentralStoresList'
+import { getErrorMessage } from '@/lib/utils/errors'
 
-export default async function PurchasesPage() {
+export default async function CentralStoresPage() {
   const supabase = await createClient()
 
   const {
@@ -18,20 +17,18 @@ export default async function PurchasesPage() {
     redirect('/login')
   }
 
-  // Check if user is admin or central store manager
+  // Only admins can manage central stores
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('role')
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'central_store_manager'].includes(profile.role)) {
+  if (!profile || profile.role !== 'admin') {
     redirect('/dashboard')
   }
 
-  const { data: centralStores } = await getCentralStores()
-  const { data: purchases, error } = await getPurchases()
-  const { data: products } = await getProducts()
+  const { data: stores, error } = await getCentralStores()
 
   return (
     <div className="min-h-screen bg-white">
@@ -69,24 +66,19 @@ export default async function PurchasesPage() {
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6 flex justify-between items-center">
           <h2 className="text-2xl font-bold" style={{ color: '#0067ac' }}>
-            Purchase History
+            Central Stores
           </h2>
         </div>
 
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
             <div className="text-sm text-red-800">
-              <strong>Error loading purchases:</strong> {typeof error === 'string' ? error : error?.message || 'Unknown error'}
+              <strong>Error loading central stores:</strong> {getErrorMessage(error)}
             </div>
           </div>
         )}
 
-        <PurchasesList 
-          initialPurchases={purchases || []} 
-          products={products || []} 
-          centralStores={centralStores || []}
-          isAdmin={profile.role === 'admin'}
-        />
+        <CentralStoresList initialStores={stores || []} />
       </main>
     </div>
   )

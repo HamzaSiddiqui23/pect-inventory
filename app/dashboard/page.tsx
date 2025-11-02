@@ -88,6 +88,19 @@ export default async function DashboardPage() {
               </a>
 
               <a
+                href="/stores"
+                className="block p-6 border-2 rounded-lg hover:shadow-lg transition-shadow"
+                style={{ borderColor: '#0067ac' }}
+              >
+                <h3 className="text-xl font-semibold mb-2" style={{ color: '#0067ac' }}>
+                  Central Stores
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Manage central stores (e.g., Karachi, Islamabad). Purchases are made to specific central stores.
+                </p>
+              </a>
+
+              <a
                 href="/categories"
                 className="block p-6 border-2 rounded-lg hover:shadow-lg transition-shadow"
                 style={{ borderColor: '#0067ac' }}
