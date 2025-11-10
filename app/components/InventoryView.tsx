@@ -1,24 +1,28 @@
 'use client'
 
-import { useState } from 'react'
-import type { InventoryItem, Store } from '@/lib/types'
+import { Fragment, useState } from 'react'
+import type { InventoryItem, InventoryMovementEntry, Store } from '@/lib/types'
+import InventoryHistoryView from '@/app/components/InventoryHistoryView'
 
 export default function InventoryView({ 
   initialInventory, 
   stores, 
   isAdmin,
   currentStoreId,
-  canViewAllStores = false
+  canViewAllStores = false,
+  historyMap = {},
 }: { 
   initialInventory: InventoryItem[]
   stores: Store[]
   isAdmin: boolean
   currentStoreId?: string
   canViewAllStores?: boolean
+  historyMap?: Record<string, InventoryMovementEntry[]>
 }) {
   const [selectedStoreId, setSelectedStoreId] = useState<string | undefined>(currentStoreId)
   const [searchName, setSearchName] = useState<string>('')
   const [searchCategory, setSearchCategory] = useState<string>('')
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   // Get unique categories from inventory
   const categories = Array.from(
@@ -145,12 +149,15 @@ export default function InventoryView({
                     Total Value
                   </th>
                 )}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  History
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 6 : 4} className="px-6 py-4 text-center text-sm text-gray-500">
+                  <td colSpan={isAdmin ? 7 : 5} className="px-6 py-4 text-center text-sm text-gray-500">
                     No inventory found {selectedStoreId ? 'for this store' : ''}.
                   </td>
                 </tr>
@@ -160,37 +167,66 @@ export default function InventoryView({
                                        item.product.restock_level > 0 && 
                                        item.quantity <= item.product.restock_level
                   return (
-                  <tr 
-                    key={item.id}
-                    className={needsRestock ? 'bg-red-50 border-l-4' : ''}
-                    style={needsRestock ? { borderLeftColor: '#dc2626' } : {}}
-                  >
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
-                      {item.product?.name || '-'}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-500'}`}>
-                      {item.product?.category?.name || '-'}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-500'}`}>
-                      {item.store?.name || '-'}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
-                      {item.quantity} {item.product?.unit || ''}
-                      {needsRestock && (
-                        <span className="ml-2 text-xs font-bold text-red-600">(Low Stock)</span>
-                      )}
-                    </td>
-                    {isAdmin && (
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-900'}`}>
-                        PKR {item.average_cost?.toFixed(2) || '0.00'}
-                      </td>
-                    )}
-                    {isAdmin && (
+                  <Fragment key={item.id}>
+                    <tr 
+                      className={needsRestock ? 'bg-red-50 border-l-4' : ''}
+                      style={needsRestock ? { borderLeftColor: '#dc2626' } : {}}
+                    >
                       <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
-                        PKR {((item.average_cost || 0) * item.quantity).toFixed(2)}
+                        {item.product?.name || '-'}
                       </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-500'}`}>
+                        {item.product?.category?.name || '-'}
+                      </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-500'}`}>
+                        {item.store?.name || '-'}
+                      </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
+                        {item.quantity} {item.product?.unit || ''}
+                        {needsRestock && (
+                          <span className="ml-2 text-xs font-bold text-red-600">(Low Stock)</span>
+                        )}
+                      </td>
+                      {isAdmin && (
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-900'}`}>
+                          PKR {item.average_cost?.toFixed(2) || '0.00'}
+                        </td>
+                      )}
+                      {isAdmin && (
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
+                          PKR {((item.average_cost || 0) * item.quantity).toFixed(2)}
+                        </td>
+                      )}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedItemId((prev) => (prev === item.id ? null : item.id))
+                          }
+                          className="inline-flex items-center rounded-md border border-[#0067ac] px-3 py-1 text-sm font-medium text-[#0067ac] hover:bg-[#0067ac] hover:text-white transition-colors"
+                        >
+                          {expandedItemId === item.id ? 'Hide History' : 'View History'}
+                        </button>
+                      </td>
+                    </tr>
+                    {expandedItemId === item.id && (
+                      <tr>
+                        <td colSpan={isAdmin ? 7 : 5} className="px-6 py-4 bg-gray-50">
+                          {historyMap[item.id]?.length ? (
+                            <InventoryHistoryView
+                              item={item}
+                              movements={historyMap[item.id]}
+                              hideMeta
+                            />
+                          ) : (
+                            <div className="text-sm text-gray-500">
+                              No movement history available for this item.
+                            </div>
+                          )}
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </Fragment>
                   )
                 })
               )}

@@ -7,12 +7,15 @@ CREATE TYPE store_type AS ENUM ('central', 'project');
 -- Create units enum (standardized units)
 CREATE TYPE unit_type AS ENUM (
   'kg', 'g', 'tons',
-  'pcs', 'units',
+  'pcs', 'units', 'nos',
+  'coil',
   'm', 'cm', 'km',
   'l', 'ml',
   'sqm', 'sqft',
   'boxes', 'bags', 'bundles',
-  'other'
+  'other',
+  'length', 'width', 'height', 'diameter', 'radius',
+  'area', 'volume', 'weight'
 );
 
 -- Create categories table

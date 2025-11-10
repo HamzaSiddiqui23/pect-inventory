@@ -1,29 +1,49 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createPurchase, updatePurchase, deletePurchase, getPurchases } from '@/lib/actions/purchases'
+import { createProduct } from '@/lib/actions/products'
 import { getErrorMessage } from '@/lib/utils/errors'
-import type { Purchase, Product, Store } from '@/lib/types'
+import type { Purchase, Product, Store, Category, UnitType } from '@/lib/types'
+import { UNIT_OPTIONS } from '@/lib/constants/unitOptions'
 
 export default function PurchasesList({ 
   initialPurchases, 
   products, 
+  categories,
   centralStores,
   isAdmin 
 }: { 
   initialPurchases: Purchase[]
   products: Product[]
+  categories: Category[]
   centralStores: Store[]
   isAdmin: boolean
 }) {
+  const sortProducts = (items: Product[]) =>
+    [...items].sort((a, b) => a.name.localeCompare(b.name))
+
+  const createInitialProductForm = () => ({
+    name: '',
+    category_id: categories[0]?.id ?? '',
+    unit: (UNIT_OPTIONS[0]?.value ?? 'units') as UnitType,
+    description: '',
+    restock_level: '',
+  })
+
   const [purchases, setPurchases] = useState(initialPurchases)
+  const [productOptions, setProductOptions] = useState<Product[]>(sortProducts(products))
   const [showModal, setShowModal] = useState(false)
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [productError, setProductError] = useState<string | null>(null)
   const [filterProductId, setFilterProductId] = useState<string>('')
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
+  const [productSearch, setProductSearch] = useState('')
+  const [showProductModal, setShowProductModal] = useState(false)
+  const [savingProduct, setSavingProduct] = useState(false)
   const [formData, setFormData] = useState({
     store_id: '',
     product_id: '',
@@ -32,6 +52,127 @@ export default function PurchasesList({
     purchase_date: new Date().toISOString().split('T')[0],
     notes: '',
   })
+  const [newProductData, setNewProductData] = useState<{
+    name: string
+    category_id: string
+    unit: UnitType
+    description: string
+    restock_level: string
+  }>(createInitialProductForm)
+
+  useEffect(() => {
+    setProductOptions(sortProducts(products))
+  }, [products])
+
+  useEffect(() => {
+    setNewProductData((prev) => ({
+      ...prev,
+      category_id: prev.category_id || categories[0]?.id || '',
+    }))
+  }, [categories])
+
+  const filteredProducts = useMemo(() => {
+    const query = productSearch.trim().toLowerCase()
+
+    if (!query) {
+      return productOptions
+    }
+
+    return productOptions.filter((product) => {
+      const nameMatch = product.name.toLowerCase().includes(query)
+      const categoryMatch = product.category?.name
+        ? product.category.name.toLowerCase().includes(query)
+        : false
+      return nameMatch || categoryMatch
+    })
+  }, [productOptions, productSearch])
+
+  const productSelectOptions = useMemo(() => {
+    const options = [...filteredProducts]
+
+    if (formData.product_id && !options.some((product) => product.id === formData.product_id)) {
+      const selectedProduct = productOptions.find((product) => product.id === formData.product_id)
+      if (selectedProduct) {
+        options.unshift(selectedProduct)
+      }
+    }
+
+    const unique = new Map<string, Product>()
+    options.forEach((product) => {
+      if (!unique.has(product.id)) {
+        unique.set(product.id, product)
+      }
+    })
+
+    return Array.from(unique.values())
+  }, [filteredProducts, formData.product_id, productOptions])
+
+  const handleProductModalOpen = () => {
+    setProductError(null)
+    setNewProductData(createInitialProductForm())
+    setShowProductModal(true)
+  }
+
+  const handleProductModalClose = () => {
+    setShowProductModal(false)
+    setSavingProduct(false)
+    setProductError(null)
+    setNewProductData(createInitialProductForm())
+  }
+
+  const handleCreateProduct = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setProductError(null)
+
+    if (!newProductData.name.trim()) {
+      setProductError('Product name is required')
+      return
+    }
+
+    if (!newProductData.category_id) {
+      setProductError('Category is required')
+      return
+    }
+
+    const restockLevel = newProductData.restock_level
+      ? parseFloat(newProductData.restock_level)
+      : undefined
+
+    if (restockLevel !== undefined && (isNaN(restockLevel) || restockLevel < 0)) {
+      setProductError('Restock level must be 0 or greater')
+      return
+    }
+
+    setSavingProduct(true)
+
+    const result = await createProduct({
+      name: newProductData.name.trim(),
+      category_id: newProductData.category_id,
+      unit: newProductData.unit,
+      description: newProductData.description.trim()
+        ? newProductData.description.trim()
+        : undefined,
+      restock_level: restockLevel,
+    })
+
+    if (result.error) {
+      setProductError(getErrorMessage(result.error))
+      setSavingProduct(false)
+      return
+    }
+
+    const createdProduct = result.data as Product
+    setProductOptions((prev) => sortProducts([...prev, createdProduct]))
+    setFormData((prev) => ({
+      ...prev,
+      product_id: createdProduct.id,
+    }))
+    setProductSearch(createdProduct.name)
+    setSavingProduct(false)
+    setShowProductModal(false)
+    setProductError(null)
+    setNewProductData(createInitialProductForm())
+  }
 
   // Filter purchases based on selected filters
   useEffect(() => {
@@ -67,6 +208,12 @@ export default function PurchasesList({
 
     if (!formData.store_id) {
       setError('Please select a central store')
+      setLoading(false)
+      return
+    }
+
+    if (!formData.product_id) {
+      setError('Please select a product')
       setLoading(false)
       return
     }
@@ -132,6 +279,8 @@ export default function PurchasesList({
       purchase_date: purchase.purchase_date,
       notes: purchase.notes || '',
     })
+    const selectedProduct = productOptions.find((product) => product.id === purchase.product_id)
+    setProductSearch(selectedProduct?.name ?? '')
     setShowModal(true)
   }
 
@@ -165,6 +314,7 @@ export default function PurchasesList({
       notes: '',
     })
     setError(null)
+    setProductSearch('')
   }
 
   return (
@@ -182,7 +332,7 @@ export default function PurchasesList({
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
             >
               <option value="">All Products</option>
-              {products.map((product) => (
+              {productOptions.map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.name} ({product.category?.name})
                 </option>
@@ -277,9 +427,27 @@ export default function PurchasesList({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Product *
-                </label>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">
+                    Product *
+                  </label>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleProductModalOpen}
+                      className="text-sm font-medium text-[#0067ac] hover:underline"
+                    >
+                      Add new product
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="Search by name or category"
+                  className="mb-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                />
                 <select
                   required={!editingPurchase}
                   value={formData.product_id}
@@ -288,12 +456,19 @@ export default function PurchasesList({
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac] disabled:bg-gray-100 disabled:cursor-not-allowed"
                 >
                   <option value="">Select a product</option>
-                  {products.map((product) => (
+                  {productSelectOptions.map((product) => (
                     <option key={product.id} value={product.id}>
                       {product.name} ({product.category?.name}) - {product.unit}
                     </option>
                   ))}
                 </select>
+                {productSearch && productSelectOptions.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {isAdmin
+                      ? 'No matching products. Use "Add new product" to create one.'
+                      : 'No matching products. Please contact an admin to add it.'}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -382,6 +557,140 @@ export default function PurchasesList({
                   style={{ backgroundColor: '#0067ac' }}
                 >
                   {loading ? (editingPurchase ? 'Updating...' : 'Creating...') : (editingPurchase ? 'Update Purchase' : 'Create Purchase')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showProductModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold mb-4" style={{ color: '#0067ac' }}>
+              Add New Product
+            </h3>
+            <form onSubmit={handleCreateProduct} className="space-y-4">
+              {productError && (
+                <div className="rounded-md bg-red-50 p-3 border border-red-200">
+                  <div className="text-sm text-red-800">{productError}</div>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Product Name *
+                </label>
+                <input
+                  type="text"
+                  value={newProductData.name}
+                  onChange={(e) =>
+                    setNewProductData({ ...newProductData, name: e.target.value })
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                  placeholder="Enter product name"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Category *
+                </label>
+                <select
+                  value={newProductData.category_id}
+                  onChange={(e) =>
+                    setNewProductData({ ...newProductData, category_id: e.target.value })
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac] disabled:bg-gray-100"
+                  required
+                  disabled={categories.length === 0}
+                >
+                  <option value="">Select a category</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                {categories.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    No categories available. Create a category first.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Unit *
+                </label>
+                <select
+                  value={newProductData.unit}
+                  onChange={(e) =>
+                    setNewProductData({ ...newProductData, unit: e.target.value as UnitType })
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                  required
+                >
+                  {UNIT_OPTIONS.map((unit) => (
+                    <option key={unit.value} value={unit.value}>
+                      {unit.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Restock Level
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newProductData.restock_level}
+                  onChange={(e) =>
+                    setNewProductData({ ...newProductData, restock_level: e.target.value })
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={newProductData.description}
+                  onChange={(e) =>
+                    setNewProductData({ ...newProductData, description: e.target.value })
+                  }
+                  rows={3}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                  placeholder="Optional description"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleProductModalClose}
+                  className="flex-1 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingProduct || categories.length === 0}
+                  className="flex-1 rounded-md px-4 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70"
+                  style={{ backgroundColor: '#0067ac' }}
+                  onMouseEnter={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#005a94'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#0067ac'
+                    }
+                  }}
+                >
+                  {savingProduct ? 'Saving...' : 'Save Product'}
                 </button>
               </div>
             </form>

@@ -64,15 +64,51 @@ export async function createIssue(input: CreateIssueInput) {
     return { error: 'Insufficient inventory' }
   }
 
+  let destinationStore: { type: string; project_id: string | null } | null = null
+
+  if (input.to_store_id) {
+    if (input.to_store_id === input.from_store_id) {
+      return { error: 'Destination store must be different from source store' }
+    }
+
+    const { data: toStore } = await supabase
+      .from('stores')
+      .select('type, project_id')
+      .eq('id', input.to_store_id)
+      .is('deleted_at', null)
+      .single()
+
+    if (!toStore) {
+      return { error: 'Destination store not found' }
+    }
+
+    if (sourceStore.type === 'central' && toStore.type !== 'project') {
+      return { error: 'Central stores can only issue to project stores' }
+    }
+
+    if (sourceStore.type === 'project' && toStore.type !== 'central') {
+      return { error: 'Project stores can only return items to a central store or issue to individuals' }
+    }
+
+    destinationStore = toStore
+  } else if (sourceStore.type === 'central') {
+    return { error: 'Central stores must select a destination store' }
+  }
+
+  const issuedToName =
+    !input.to_store_id && sourceStore.type !== 'central'
+      ? input.issued_to_name?.toString().trim() || null
+      : null
+
   // Create the issue record
   const { data, error } = await supabase
     .from('issues')
     .insert({
       from_store_id: input.from_store_id,
-      to_store_id: input.to_store_id || null,
+      to_store_id: destinationStore ? input.to_store_id : null,
       product_id: input.product_id,
       quantity: input.quantity,
-      issued_to_name: input.issued_to_name || null,
+      issued_to_name: issuedToName,
       issue_date: input.issue_date || new Date().toISOString().split('T')[0],
       notes: input.notes || null,
       created_by: user.id,
@@ -208,10 +244,15 @@ export async function getIssueableStores() {
     `)
     .is('deleted_at', null)
 
-  if (!isAdmin && !isCentralStoreManager) {
-    // Project store managers can only issue from their store
-    if (profile.project_id) {
-      fromStoresQuery = fromStoresQuery.eq('project_id', profile.project_id)
+  if (!isAdmin) {
+    if (isCentralStoreManager) {
+      fromStoresQuery = fromStoresQuery.eq('type', 'central')
+    } else if (isProjectStoreManager) {
+      if (profile.project_id) {
+        fromStoresQuery = fromStoresQuery.eq('project_id', profile.project_id)
+      } else {
+        fromStoresQuery = fromStoresQuery.eq('id', '00000000-0000-0000-0000-000000000000') // No project assigned
+      }
     }
   }
 
@@ -221,11 +262,17 @@ export async function getIssueableStores() {
     return { data: null, error: getErrorMessage(fromError) }
   }
 
-  // Get stores the user can issue to (for central stores issuing to project stores)
-  let toStores: any[] = []
+  const toStoresSet = new Map<string, any>()
+
+  const addStores = (stores: any[] | null | undefined) => {
+    if (!stores) return
+    for (const store of stores) {
+      toStoresSet.set(store.id, store)
+    }
+  }
+
   if (isAdmin || isCentralStoreManager) {
-    // Any central store can issue to project stores
-    const { data: projectStores, error: toError } = await supabase
+    const { data: projectStores, error: projectError } = await supabase
       .from('stores')
       .select(`
         *,
@@ -234,17 +281,36 @@ export async function getIssueableStores() {
       .eq('type', 'project')
       .is('deleted_at', null)
 
-    if (!toError && projectStores) {
-      toStores = projectStores
+    if (projectError) {
+      return { data: null, error: getErrorMessage(projectError) }
     }
+
+    addStores(projectStores)
   }
 
-  return { 
-    data: { 
-      fromStores: fromStores || [], 
-      toStores 
-    }, 
-    error: null 
+  if (isAdmin || isProjectStoreManager) {
+    const { data: centralStores, error: centralError } = await supabase
+      .from('stores')
+      .select(`
+        *,
+        project:projects(*)
+      `)
+      .eq('type', 'central')
+      .is('deleted_at', null)
+
+    if (centralError) {
+      return { data: null, error: getErrorMessage(centralError) }
+    }
+
+    addStores(centralStores)
+  }
+
+  return {
+    data: {
+      fromStores: fromStores || [],
+      toStores: Array.from(toStoresSet.values()),
+    },
+    error: null,
   }
 }
 

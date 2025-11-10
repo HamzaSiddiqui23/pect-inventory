@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getPurchases } from '@/lib/actions/purchases'
 import { getCentralStores } from '@/lib/actions/stores'
 import { getProducts } from '@/lib/actions/products'
+import { getCategories } from '@/lib/actions/categories'
 import Image from 'next/image'
 import LogoutButton from '@/app/components/LogoutButton'
 import PurchasesList from '@/app/components/PurchasesList'
@@ -32,6 +33,7 @@ export default async function PurchasesPage() {
   const { data: centralStores } = await getCentralStores()
   const { data: purchases, error } = await getPurchases()
   const { data: products } = await getProducts()
+  const { data: categories } = await getCategories()
 
   return (
     <div className="min-h-screen bg-white">
@@ -84,6 +86,7 @@ export default async function PurchasesPage() {
         <PurchasesList 
           initialPurchases={purchases || []} 
           products={products || []} 
+          categories={categories || []}
           centralStores={centralStores || []}
           isAdmin={profile.role === 'admin'}
         />

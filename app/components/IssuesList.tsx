@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createIssue, getIssues } from '@/lib/actions/issues'
 import { getInventory } from '@/lib/actions/inventory'
 import { getErrorMessage } from '@/lib/utils/errors'
@@ -67,23 +67,55 @@ export default function IssuesList({
     loadFilteredIssues()
   }, [filterProductId, filterStartDate, filterEndDate, initialIssues])
 
-  const isAdmin = userProfile.role === 'admin'
-  const isCentralStoreManager = userProfile.role === 'central_store_manager'
-  const selectedFromStore = storesData?.fromStores.find(s => s.id === formData.from_store_id)
-  const isCentralStore = selectedFromStore?.type === 'central'
-  const canIssueToStore = isCentralStore && (isAdmin || isCentralStoreManager) // Any central store can issue to project stores
-
-  // Load inventory when from_store and product are selected
   useEffect(() => {
-    if (formData.from_store_id && formData.product_id) {
-      loadInventory()
+    if (!formData.from_store_id && storesData?.fromStores?.length) {
+      setFormData((prev) => ({
+        ...prev,
+        from_store_id: storesData.fromStores[0].id,
+      }))
+    }
+  }, [storesData?.fromStores, formData.from_store_id])
+
+  const selectedFromStore = useMemo(
+    () => storesData?.fromStores.find((s) => s.id === formData.from_store_id),
+    [storesData?.fromStores, formData.from_store_id]
+  )
+
+  const destinationStores = useMemo(() => {
+    if (!selectedFromStore) return []
+    return (storesData?.toStores || []).filter(
+      (store) => store.id !== selectedFromStore.id && store.type !== selectedFromStore.type
+    )
+  }, [selectedFromStore, storesData?.toStores])
+
+  useEffect(() => {
+    if (
+      formData.to_store_id &&
+      destinationStores.length > 0 &&
+      !destinationStores.some((store) => store.id === formData.to_store_id)
+    ) {
+      setFormData((prev) => ({
+        ...prev,
+        to_store_id: '',
+      }))
+    }
+  }, [destinationStores, formData.to_store_id])
+
+  const isCentralStore = selectedFromStore?.type === 'central'
+  const destinationLabel = isCentralStore ? 'To Project Store' : 'Return to Central Store'
+  const requiresDestinationStore = isCentralStore
+  const shouldShowDestinationSelect = destinationStores.length > 0
+
+  useEffect(() => {
+    if (formData.from_store_id) {
+      loadInventory(formData.from_store_id)
     } else {
       setAvailableInventory([])
     }
-  }, [formData.from_store_id, formData.product_id])
+  }, [formData.from_store_id])
 
-  const loadInventory = async () => {
-    const { data } = await getInventory(formData.from_store_id)
+  const loadInventory = async (storeId: string) => {
+    const { data } = await getInventory(storeId)
     if (data) {
       setAvailableInventory(data)
     }
@@ -115,15 +147,14 @@ export default function IssuesList({
     }
 
     // For central stores issuing to project stores, require to_store_id
-    if (canIssueToStore && !formData.to_store_id) {
-      setError('Please select a project store to issue to')
+    if (requiresDestinationStore && !formData.to_store_id) {
+      setError('Please select a destination store')
       setLoading(false)
       return
     }
 
-    // For project stores issuing to projects, require issued_to_name
-    if (!isCentralStore && !formData.issued_to_name) {
-      setError('Please enter the name of person receiving the items')
+    if (!isCentralStore && !formData.to_store_id && !formData.issued_to_name.trim()) {
+      setError('Please enter the name of the person receiving the items')
       setLoading(false)
       return
     }
@@ -141,10 +172,13 @@ export default function IssuesList({
 
     const result = await createIssue({
       from_store_id: formData.from_store_id,
-      to_store_id: isCentralStore ? (formData.to_store_id || null) : null,
+      to_store_id: formData.to_store_id || null,
       product_id: formData.product_id,
       quantity,
-      issued_to_name: isCentralStore ? undefined : formData.issued_to_name,
+      issued_to_name:
+        !isCentralStore && !formData.to_store_id
+          ? formData.issued_to_name.trim()
+          : undefined,
       issue_date: formData.issue_date || undefined,
       notes: formData.notes || undefined,
     })
@@ -175,6 +209,32 @@ export default function IssuesList({
   const availableQuantity = availableInventory.find(
     item => item.product_id === formData.product_id
   )?.quantity || 0
+
+  const availableProductIds = useMemo(() => {
+    return new Set(
+      availableInventory
+        .filter((item) => Number(item.quantity) > 0)
+        .map((item) => item.product_id)
+    )
+  }, [availableInventory])
+
+  const filteredProducts = useMemo(() => {
+    if (!selectedFromStore) return products
+    return products.filter((product) => availableProductIds.has(product.id))
+  }, [products, selectedFromStore, availableProductIds])
+
+  useEffect(() => {
+    if (
+      formData.product_id &&
+      filteredProducts.length > 0 &&
+      !filteredProducts.some((product) => product.id === formData.product_id)
+    ) {
+      setFormData((prev) => ({
+        ...prev,
+        product_id: '',
+      }))
+    }
+  }, [filteredProducts, formData.product_id])
 
   return (
     <div>
@@ -292,19 +352,21 @@ export default function IssuesList({
                 </select>
               </div>
 
-              {canIssueToStore && (
+              {shouldShowDestinationSelect && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    To Project Store *
+                    {destinationLabel} {requiresDestinationStore ? '*' : '(Optional)'}
                   </label>
                   <select
-                    required
+                    required={requiresDestinationStore}
                     value={formData.to_store_id}
                     onChange={(e) => setFormData({ ...formData, to_store_id: e.target.value })}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
                   >
-                    <option value="">Select a project store</option>
-                    {storesData?.toStores.map((store) => (
+                    <option value="">
+                      {requiresDestinationStore ? 'Select a destination store' : 'No destination store'}
+                    </option>
+                    {destinationStores.map((store) => (
                       <option key={store.id} value={store.id}>
                         {store.name} {store.project ? `- ${store.project.name}` : ''}
                       </option>
@@ -316,15 +378,19 @@ export default function IssuesList({
               {!isCentralStore && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Issued To (Name) *
+                    Issued To (Name) {!formData.to_store_id ? '*' : '(Optional)'}
                   </label>
                   <input
                     type="text"
-                    required
+                    required={!formData.to_store_id}
                     value={formData.issued_to_name}
                     onChange={(e) => setFormData({ ...formData, issued_to_name: e.target.value })}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                    placeholder="Name of person/team receiving items"
+                    placeholder={
+                      formData.to_store_id
+                        ? 'Optional when returning to a central store'
+                        : 'Name of person/team receiving items'
+                    }
                   />
                 </div>
               )}
@@ -340,7 +406,7 @@ export default function IssuesList({
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
                 >
                   <option value="">Select a product</option>
-                  {products.map((product) => (
+                  {filteredProducts.map((product) => (
                     <option key={product.id} value={product.id}>
                       {product.name} ({product.category?.name}) - {product.unit}
                     </option>

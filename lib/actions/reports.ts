@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getErrorMessage } from '@/lib/utils/errors'
+import type { InventoryMovementEntry, InventoryMovementSummaryItem, Product, Store } from '@/lib/types'
 
 export type ReportPeriod = 'today' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'lifetime'
 
@@ -311,6 +312,305 @@ export async function getInventoryCostReport(storeId?: string) {
   })
 
   return { data: inventoryWithCosts, summary, error: null }
+}
+
+export async function getInventoryMovementReport(
+  period: ReportPeriod,
+  centralStoreId?: string,
+  projectStoreId?: string
+) {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return { data: null, error: 'Not authenticated' }
+  }
+
+  const dateRange = getDateRange(period)
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role, project_id')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile) {
+    return { data: null, error: 'User profile not found' }
+  }
+
+  let centralStore: Store | null = null
+  if (centralStoreId) {
+    const { data, error } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('id', centralStoreId)
+      .eq('type', 'central')
+      .is('deleted_at', null)
+      .single()
+
+    if (error || !data) {
+      return { data: null, error: error ? getErrorMessage(error) : 'Central store not found' }
+    }
+    centralStore = data as Store
+  }
+
+  let projectStore: Store | null = null
+  if (projectStoreId) {
+    const { data, error } = await supabase
+      .from('stores')
+      .select(`
+        *,
+        project:projects(*)
+      `)
+      .eq('id', projectStoreId)
+      .eq('type', 'project')
+      .is('deleted_at', null)
+      .single()
+
+    if (error || !data) {
+      return { data: null, error: error ? getErrorMessage(error) : 'Project store not found' }
+    }
+    projectStore = data as Store
+  }
+
+  const purchasesQuery = supabase
+    .from('purchases')
+    .select(
+      `
+        id,
+        quantity,
+        unit_cost,
+        total_cost,
+        purchase_date,
+        created_at,
+        notes,
+        product:products(
+          *,
+          category:categories(*)
+        ),
+        store:stores(*)
+      `
+    )
+    .is('deleted_at', null)
+    .gte('purchase_date', dateRange.startDate)
+    .lte('purchase_date', dateRange.endDate)
+
+  if (projectStoreId) {
+    purchasesQuery.eq('store_id', projectStoreId)
+  }
+
+  const { data: projectPurchases, error: purchasesError } = await purchasesQuery
+
+  if (purchasesError) {
+    return { data: null, error: getErrorMessage(purchasesError) }
+  }
+
+  const issuesInQuery = supabase
+    .from('issues')
+    .select(
+      `
+        id,
+        quantity,
+        issue_date,
+        created_at,
+        notes,
+        issued_to_name,
+        unit_cost,
+        total_cost,
+        from_store:stores!issues_from_store_id_fkey(*),
+        to_store:stores!issues_to_store_id_fkey(*),
+        product:products(
+          *,
+          category:categories(*)
+        )
+      `
+    )
+    .is('deleted_at', null)
+    .gte('issue_date', dateRange.startDate)
+    .lte('issue_date', dateRange.endDate)
+
+  if (projectStoreId) {
+    issuesInQuery.eq('to_store_id', projectStoreId)
+  }
+  if (centralStoreId) {
+    issuesInQuery.eq('from_store_id', centralStoreId)
+  }
+
+  const { data: issuesIn, error: issuesInError } = await issuesInQuery
+
+  if (issuesInError) {
+    return { data: null, error: getErrorMessage(issuesInError) }
+  }
+
+  const issuesOutQuery = supabase
+    .from('issues')
+    .select(
+      `
+        id,
+        quantity,
+        issue_date,
+        created_at,
+        notes,
+        issued_to_name,
+        unit_cost,
+        total_cost,
+        from_store:stores!issues_from_store_id_fkey(*),
+        to_store:stores!issues_to_store_id_fkey(*),
+        product:products(
+          *,
+          category:categories(*)
+        )
+      `
+    )
+    .is('deleted_at', null)
+    .gte('issue_date', dateRange.startDate)
+    .lte('issue_date', dateRange.endDate)
+
+  if (projectStoreId) {
+    issuesOutQuery.eq('from_store_id', projectStoreId)
+  }
+
+  const { data: issuesOut, error: issuesOutError } = await issuesOutQuery
+
+  if (issuesOutError) {
+    return { data: null, error: getErrorMessage(issuesOutError) }
+  }
+
+  const inventoryMap = new Map<string, number>()
+  if (projectStoreId) {
+    const { data: inventoryItems, error: inventoryError } = await supabase
+      .from('inventory_items')
+      .select('product_id, quantity')
+      .eq('store_id', projectStoreId)
+
+    if (inventoryError) {
+      return { data: null, error: getErrorMessage(inventoryError) }
+    }
+
+    inventoryItems?.forEach((item) => {
+      inventoryMap.set(item.product_id, Number(item.quantity))
+    })
+  }
+
+  const summaries = new Map<string, InventoryMovementSummaryItem>()
+
+  const ensureSummary = (product: Product) => {
+    if (!summaries.has(product.id)) {
+      summaries.set(product.id, {
+        product,
+        received_quantity: 0,
+        issued_quantity: 0,
+        balance_quantity: inventoryMap.get(product.id) ?? 0,
+        movements: [],
+      })
+    }
+    return summaries.get(product.id)!
+  }
+
+  projectPurchases?.forEach((purchase) => {
+    const summary = ensureSummary(purchase.product)
+    const quantity = Number(purchase.quantity)
+    summary.received_quantity += quantity
+    const entry: InventoryMovementEntry = {
+      id: `purchase-${purchase.id}`,
+      store_id: projectStoreId,
+      product_id: purchase.product.id,
+      reference_type: 'purchase',
+      reference_id: purchase.id,
+      movement_type: 'purchase',
+      date: purchase.purchase_date,
+      created_at: purchase.created_at,
+      quantity,
+      unit_cost: purchase.unit_cost,
+      total_cost: purchase.total_cost,
+      notes: purchase.notes,
+      issued_to_name: null,
+      source_store: null,
+      destination_store: projectStore,
+    }
+    summary.movements.push(entry)
+  })
+
+  issuesIn?.forEach((issue) => {
+    const summary = ensureSummary(issue.product)
+    const quantity = Number(issue.quantity)
+    summary.received_quantity += quantity
+    const entry: InventoryMovementEntry = {
+      id: `issue-in-${issue.id}`,
+      store_id: projectStoreId,
+      product_id: issue.product.id,
+      reference_type: 'issue',
+      reference_id: issue.id,
+      movement_type: 'issue_in',
+      date: issue.issue_date,
+      created_at: issue.created_at,
+      quantity,
+      unit_cost: issue.unit_cost,
+      total_cost: issue.total_cost,
+      notes: issue.notes,
+      issued_to_name: issue.issued_to_name,
+      source_store: issue.from_store,
+      destination_store: issue.to_store,
+    }
+    summary.movements.push(entry)
+  })
+
+  issuesOut?.forEach((issue) => {
+    const summary = ensureSummary(issue.product)
+    const quantity = Number(issue.quantity)
+    summary.issued_quantity += quantity
+    const entry: InventoryMovementEntry = {
+      id: `issue-out-${issue.id}`,
+      store_id: projectStoreId,
+      product_id: issue.product.id,
+      reference_type: 'issue',
+      reference_id: issue.id,
+      movement_type: 'issue_out',
+      date: issue.issue_date,
+      created_at: issue.created_at,
+      quantity,
+      unit_cost: issue.unit_cost,
+      total_cost: issue.total_cost,
+      notes: issue.notes,
+      issued_to_name: issue.issued_to_name,
+      source_store: issue.from_store,
+      destination_store: issue.to_store,
+    }
+    summary.movements.push(entry)
+  })
+
+  const result = Array.from(summaries.values()).map((summary) => {
+    const received = summary.received_quantity
+    const issued = summary.issued_quantity
+    const currentBalance = inventoryMap.get(summary.product.id)
+    return {
+      ...summary,
+      received_quantity: received,
+      issued_quantity: issued,
+      balance_quantity: currentBalance ?? received - issued,
+      movements: summary.movements.sort((a, b) => {
+        const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime()
+        if (dateDiff !== 0) {
+          return dateDiff
+        }
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      }),
+    }
+  })
+
+  const sortedResult = result.sort((a, b) =>
+    a.product.name.localeCompare(b.product.name)
+  )
+
+  return {
+    data: sortedResult,
+    centralStore: centralStore,
+    projectStore: projectStore,
+    period,
+    error: null,
+  }
 }
 
 export async function getStoresForReports() {

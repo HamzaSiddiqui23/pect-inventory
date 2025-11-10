@@ -5,25 +5,7 @@ import { createProduct, updateProduct, deleteProduct } from '@/lib/actions/produ
 import { getErrorMessage } from '@/lib/utils/errors'
 import type { Product, Category } from '@/lib/types'
 import type { UnitType } from '@/lib/types'
-
-const UNITS: { value: UnitType; label: string }[] = [
-  { value: 'kg', label: 'Kilograms (kg)' },
-  { value: 'g', label: 'Grams (g)' },
-  { value: 'tons', label: 'Tons' },
-  { value: 'pcs', label: 'Pieces (pcs)' },
-  { value: 'units', label: 'Units' },
-  { value: 'm', label: 'Meters (m)' },
-  { value: 'cm', label: 'Centimeters (cm)' },
-  { value: 'km', label: 'Kilometers (km)' },
-  { value: 'l', label: 'Liters (l)' },
-  { value: 'ml', label: 'Milliliters (ml)' },
-  { value: 'sqm', label: 'Square Meters (sqm)' },
-  { value: 'sqft', label: 'Square Feet (sqft)' },
-  { value: 'boxes', label: 'Boxes' },
-  { value: 'bags', label: 'Bags' },
-  { value: 'bundles', label: 'Bundles' },
-  { value: 'other', label: 'Other' },
-]
+import { UNIT_OPTIONS } from '@/lib/constants/unitOptions'
 
 export default function ProductsList({ initialProducts, categories }: { initialProducts: Product[], categories: Category[] }) {
   const [products, setProducts] = useState(initialProducts)
@@ -193,7 +175,7 @@ export default function ProductsList({ initialProducts, categories }: { initialP
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value as UnitType })}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
                 >
-                  {UNITS.map((unit) => (
+                  {UNIT_OPTIONS.map((unit) => (
                     <option key={unit.value} value={unit.value}>
                       {unit.label}
                     </option>

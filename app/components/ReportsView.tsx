@@ -1,7 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { getPurchaseReport, getIssueReport, getInventoryCostReport, type ReportPeriod } from '@/lib/actions/reports'
+import { useState, useEffect, useMemo } from 'react'
+import {
+  getPurchaseReport,
+  getInventoryCostReport,
+  getInventoryMovementReport,
+  type ReportPeriod,
+} from '@/lib/actions/reports'
+import InventoryHistoryView from '@/app/components/InventoryHistoryView'
+import type { InventoryItem } from '@/lib/types'
 import { getErrorMessage } from '@/lib/utils/errors'
 import type { Store, UserProfile } from '@/lib/types'
 
@@ -14,16 +21,33 @@ export default function ReportsView({
 }) {
   const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriod>('monthly')
   const [selectedStoreId, setSelectedStoreId] = useState<string>('')
-  const [issuedToFilter, setIssuedToFilter] = useState<string>('')
-  const [activeTab, setActiveTab] = useState<'purchases' | 'issues' | 'inventory'>('purchases')
-  
+  const [activeTab, setActiveTab] = useState<'purchases' | 'inventory' | 'transfers'>('purchases')
+  const [selectedCentralStoreId, setSelectedCentralStoreId] = useState<string>(() => {
+    const firstCentral = initialStores.find((store) => store.type === 'central')
+    return firstCentral?.id ?? ''
+  })
+  const [selectedProjectStoreId, setSelectedProjectStoreId] = useState<string>(() => {
+    const firstProject = initialStores.find((store) => store.type === 'project')
+    return firstProject?.id ?? ''
+  })
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
+
   const [purchaseData, setPurchaseData] = useState<any>(null)
-  const [issueData, setIssueData] = useState<any>(null)
   const [inventoryData, setInventoryData] = useState<any>(null)
+  const [movementData, setMovementData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isAdmin = userProfile.role === 'admin'
+
+  const centralStores = useMemo(
+    () => initialStores.filter((store) => store.type === 'central'),
+    [initialStores]
+  )
+  const projectStores = useMemo(
+    () => initialStores.filter((store) => store.type === 'project'),
+    [initialStores]
+  )
 
   const loadReports = async () => {
     setLoading(true)
@@ -36,13 +60,8 @@ export default function ReportsView({
           setError(getErrorMessage(result.error))
         } else {
           setPurchaseData(result)
-        }
-      } else if (activeTab === 'issues') {
-        const result = await getIssueReport(selectedPeriod, selectedStoreId || undefined, issuedToFilter || undefined)
-        if (result.error) {
-          setError(getErrorMessage(result.error))
-        } else {
-          setIssueData(result)
+          setInventoryData(null)
+          setMovementData(null)
         }
       } else if (activeTab === 'inventory') {
         const result = await getInventoryCostReport(selectedStoreId || undefined)
@@ -50,6 +69,21 @@ export default function ReportsView({
           setError(getErrorMessage(result.error))
         } else {
           setInventoryData(result)
+          setPurchaseData(null)
+          setMovementData(null)
+        }
+      } else if (activeTab === 'transfers') {
+        const result = await getInventoryMovementReport(
+          selectedPeriod,
+          selectedCentralStoreId || undefined,
+          selectedProjectStoreId || undefined
+        )
+        if (result.error) {
+          setError(getErrorMessage(result.error))
+        } else {
+          setMovementData(result)
+          setPurchaseData(null)
+          setInventoryData(null)
         }
       }
     } catch (err: any) {
@@ -62,10 +96,11 @@ export default function ReportsView({
   // Load reports on mount and when filters change
   useEffect(() => {
     loadReports()
-  }, [activeTab, selectedPeriod, selectedStoreId, issuedToFilter])
+  }, [activeTab, selectedPeriod, selectedStoreId, selectedCentralStoreId, selectedProjectStoreId])
 
   // Load when tab, period, or store changes
-  const handleTabChange = (tab: 'purchases' | 'issues' | 'inventory') => {
+  const handleTabChange = (tab: 'purchases' | 'inventory' | 'transfers') => {
+    setExpandedProducts({})
     setActiveTab(tab)
   }
 
@@ -75,6 +110,39 @@ export default function ReportsView({
 
   const handleStoreChange = (storeId: string) => {
     setSelectedStoreId(storeId)
+  }
+
+  const movementTotals = useMemo(() => {
+    if (!movementData?.data?.length) {
+      return { products: 0, receivedEntries: 0, issuedEntries: 0, totalMovements: 0 }
+    }
+
+    return movementData.data.reduce(
+      (
+        acc: { products: number; receivedEntries: number; issuedEntries: number; totalMovements: number },
+        item: any
+      ) => {
+        acc.products += 1
+        const movements = item.movements || []
+        movements.forEach((movement: any) => {
+          if (movement.movement_type === 'purchase' || movement.movement_type === 'issue_in') {
+            acc.receivedEntries += 1
+          } else if (movement.movement_type === 'issue_out') {
+            acc.issuedEntries += 1
+          }
+        })
+        acc.totalMovements += movements.length
+        return acc
+      },
+      { products: 0, receivedEntries: 0, issuedEntries: 0, totalMovements: 0 }
+    )
+  }, [movementData])
+
+  const handleToggleProduct = (productId: string) => {
+    setExpandedProducts((prev) => ({
+      ...prev,
+      [productId]: !prev[productId],
+    }))
   }
 
   const formatCurrency = (amount: number) => {
@@ -110,35 +178,6 @@ export default function ReportsView({
         ]
         csv += row.join(',') + '\n'
       })
-    } else if (activeTab === 'issues' && issueData?.data) {
-      filename = `issues-report-${selectedPeriod}-${new Date().toISOString().split('T')[0]}.csv`
-      
-      // CSV Headers
-      csv = 'Date,From Store,To Store,Issued To,Product,Category,Quantity,Unit'
-      if (isAdmin) {
-        csv += ',Unit Cost,Total Cost'
-      }
-      csv += ',Notes\n'
-      
-      // CSV Rows
-      issueData.data.forEach((issue: any) => {
-        const row = [
-          issue.issue_date,
-          `"${issue.from_store?.name || ''}"`,
-          `"${issue.to_store?.name || ''}"`,
-          `"${issue.issued_to_name || ''}"`,
-          `"${issue.product?.name || ''}"`,
-          `"${issue.product?.category?.name || ''}"`,
-          issue.quantity,
-          issue.product?.unit || ''
-        ]
-        if (isAdmin) {
-          row.push(issue.unit_cost || '')
-          row.push(issue.total_cost || '')
-        }
-        row.push(`"${(issue.notes || '').replace(/"/g, '""')}"`)
-        csv += row.join(',') + '\n'
-      })
     } else if (activeTab === 'inventory' && inventoryData?.data) {
       filename = `inventory-cost-report-${new Date().toISOString().split('T')[0]}.csv`
       
@@ -164,6 +203,20 @@ export default function ReportsView({
         }
         csv += row.join(',') + '\n'
       })
+    } else if (activeTab === 'transfers' && movementData?.data) {
+      filename = `inventory-history-report-${selectedPeriod}-${new Date().toISOString().split('T')[0]}.csv`
+      csv = 'Product,Unit,Received Quantity,Issued Quantity,Balance Quantity\n'
+
+      movementData.data.forEach((item: any) => {
+        const row = [
+          `"${item.product?.name || ''}"`,
+          item.product?.unit || '',
+          item.received_quantity,
+          item.issued_quantity,
+          item.balance_quantity,
+        ]
+        csv += row.join(',') + '\n'
+      })
     } else {
       alert('No data available to export')
       return
@@ -185,19 +238,19 @@ export default function ReportsView({
     <div className="space-y-6">
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-md border p-4" style={{ borderColor: '#E77817' }}>
-        <div className={`grid grid-cols-1 gap-4 ${activeTab === 'issues' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+        <div className={`grid grid-cols-1 gap-4 ${activeTab === 'transfers' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Report Type
             </label>
             <select
               value={activeTab}
-              onChange={(e) => handleTabChange(e.target.value as 'purchases' | 'issues' | 'inventory')}
+              onChange={(e) => handleTabChange(e.target.value as 'purchases' | 'inventory' | 'transfers')}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
             >
               <option value="purchases">Purchases</option>
-              <option value="issues">Issuance</option>
               <option value="inventory">Inventory Costs</option>
+              <option value="transfers">Inventory History</option>
             </select>
           </div>
 
@@ -221,38 +274,67 @@ export default function ReportsView({
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Store {isAdmin && '(Optional)'}
-            </label>
-            <select
-              value={selectedStoreId}
-              onChange={(e) => handleStoreChange(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-            >
-              <option value="">All Stores</option>
-              {initialStores.map((store) => (
-                <option key={store.id} value={store.id}>
-                  {store.name} ({store.type === 'central' ? 'Central' : 'Project'})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {activeTab === 'issues' && (
+          {activeTab !== 'transfers' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Issued To (Optional)
+                Store {isAdmin && '(Optional)'}
               </label>
-              <input
-                type="text"
-                value={issuedToFilter}
-                onChange={(e) => setIssuedToFilter(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                placeholder="Filter by recipient name"
-              />
+              <select
+                value={selectedStoreId}
+                onChange={(e) => handleStoreChange(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+              >
+                <option value="">All Stores</option>
+                {initialStores.map((store) => (
+                  <option key={store.id} value={store.id}>
+                    {store.name} ({store.type === 'central' ? 'Central' : 'Project'})
+                  </option>
+                ))}
+              </select>
             </div>
           )}
+
+          {activeTab === 'transfers' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Central Store
+                </label>
+                <select
+                  value={selectedCentralStoreId}
+                  onChange={(e) => setSelectedCentralStoreId(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                >
+                  <option value="">All Central Stores</option>
+                  {centralStores.length === 0 && <option value="">No central stores available</option>}
+                  {centralStores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project Store
+                </label>
+                <select
+                  value={selectedProjectStoreId}
+                  onChange={(e) => setSelectedProjectStoreId(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                >
+                  <option value="">All Project Stores</option>
+                  {projectStores.length === 0 && <option value="">No project stores available</option>}
+                  {projectStores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name} {store.project ? `- ${store.project.name}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+
         </div>
 
         <div className="mt-4 flex gap-3">
@@ -268,8 +350,8 @@ export default function ReportsView({
             onClick={exportToCSV}
             disabled={loading || !(
               (activeTab === 'purchases' && purchaseData?.data?.length) ||
-              (activeTab === 'issues' && issueData?.data?.length) ||
-              (activeTab === 'inventory' && inventoryData?.data?.length)
+              (activeTab === 'inventory' && inventoryData?.data?.length) ||
+              (activeTab === 'transfers' && movementData?.data?.length)
             )}
             className="rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             style={{ backgroundColor: '#E77817' }}
@@ -297,6 +379,144 @@ export default function ReportsView({
         </div>
       )}
 
+  {/* Movements Report */}
+  {activeTab === 'transfers' && (
+    <div className="bg-white rounded-lg shadow-md border overflow-hidden" style={{ borderColor: '#E77817' }}>
+      <div className="px-6 py-4 bg-gray-50 border-b space-y-2">
+        <h3 className="text-lg font-semibold" style={{ color: '#0067ac' }}>
+          Inventory History Report ({selectedPeriod})
+        </h3>
+        <div className="text-sm text-gray-600">
+          <p>
+            <span className="font-medium text-gray-900">Central Store:</span>{' '}
+            {movementData?.centralStore?.name || 'All Central Stores'}
+          </p>
+          <p>
+            <span className="font-medium text-gray-900">Project Store:</span>{' '}
+            {movementData?.projectStore?.name || 'All Project Stores'}
+            {movementData?.projectStore?.project ? ` (${movementData.projectStore.project.name})` : ''}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-6 py-4 space-y-6">
+        {!movementData?.data?.length ? (
+          <div className="rounded-md bg-yellow-50 border border-yellow-200 p-4 text-sm text-yellow-800">
+            No transfer history found for the selected stores.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <p className="text-sm text-gray-500">Products Tracked</p>
+                <p className="mt-2 text-2xl font-semibold text-[#0067ac]">
+                  {movementTotals.products}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <p className="text-sm text-gray-500">Received Entries</p>
+                <p className="mt-2 text-2xl font-semibold text-[#0067ac]">
+                  {movementTotals.receivedEntries}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">Purchases + transfers from central store</p>
+              </div>
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <p className="text-sm text-gray-500">Issued Entries</p>
+                <p className="mt-2 text-2xl font-semibold text-[#E77817]">
+                  {movementTotals.issuedEntries}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">Transfers out or on-site usage</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500">
+              Quantities are shown per-product below; totals above represent number of recorded movements (overall entries: {movementTotals.totalMovements}).
+            </p>
+
+            <div className="space-y-6">
+              {movementData.data.map((item: any) => {
+                const productId = item.product?.id || item.product_id
+                const isExpanded = expandedProducts[productId]
+                const unitLabel = item.product?.unit || ''
+                const aggregateStore =
+                  movementData?.projectStore ??
+                  (selectedProjectStoreId
+                    ? undefined
+                    : {
+                        id: 'all-project-stores',
+                        name: 'All Project Stores',
+                        type: 'project' as Store['type'],
+                        project_id: null,
+                        created_at: '1970-01-01T00:00:00Z',
+                        updated_at: '1970-01-01T00:00:00Z',
+                      })
+                const historyItem: InventoryItem = {
+                  id: `${movementData?.projectStore?.id || selectedProjectStoreId || 'all-project-stores'}-${productId}`,
+                  store_id: movementData?.projectStore?.id || selectedProjectStoreId || 'all-project-stores',
+                  product_id: productId,
+                  quantity: Number(item.balance_quantity) || 0,
+                  updated_at: item.updated_at || new Date().toISOString(),
+                  store: aggregateStore,
+                  product: item.product,
+                }
+                const movements = item.movements || []
+
+                return (
+                  <div key={productId} className="rounded-lg border bg-white shadow-sm">
+                    <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50">
+                      <div>
+                        <h4 className="text-md font-semibold text-gray-900">
+                          {item.product?.name || 'Unnamed Product'}
+                        </h4>
+                        {item.product?.category?.name && (
+                          <p className="text-sm text-gray-500">
+                            Category: {item.product.category.name}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleToggleProduct(productId)}
+                        className="inline-flex items-center rounded-md border border-[#0067ac] px-3 py-1 text-sm font-medium text-[#0067ac] hover:bg-[#0067ac] hover:text-white transition-colors"
+                      >
+                        {isExpanded ? 'Hide History' : 'View History'}
+                      </button>
+                    </div>
+
+                    <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-700">
+                      <div>
+                        <span className="text-gray-500">Received:</span>{' '}
+                        <span className="font-semibold text-[#0067ac]">
+                          {Number(item.received_quantity).toLocaleString()} {unitLabel}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Issued:</span>{' '}
+                        <span className="font-semibold text-[#E77817]">
+                          {Number(item.issued_quantity).toLocaleString()} {unitLabel}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Current Balance:</span>{' '}
+                        <span className="font-semibold text-gray-900">
+                          {Number(item.balance_quantity).toLocaleString()} {unitLabel}
+                        </span>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="px-6 pb-6">
+                        <InventoryHistoryView item={historyItem} movements={movements} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )}
       {/* Purchases Report */}
       {activeTab === 'purchases' && purchaseData && (
         <div className="bg-white rounded-lg shadow-md border overflow-hidden" style={{ borderColor: '#E77817' }}>
@@ -365,105 +585,6 @@ export default function ReportsView({
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {isAdmin ? formatCurrency(purchase.total_cost) : '-'}
                       </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Issues Report */}
-      {activeTab === 'issues' && issueData && (
-        <div className="bg-white rounded-lg shadow-md border overflow-hidden" style={{ borderColor: '#E77817' }}>
-          <div className="px-6 py-4 bg-gray-50 border-b">
-            <h3 className="text-lg font-semibold" style={{ color: '#0067ac' }}>
-              Issuance Report ({selectedPeriod})
-            </h3>
-            {issueData.summary && (
-              <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">Total Issues:</span>
-                  <span className="ml-2 font-semibold text-gray-900">{issueData.summary.totalIssues}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">To Stores:</span>
-                  <span className="ml-2 font-semibold text-gray-900">{issueData.summary.issuesToStores}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">To Projects:</span>
-                  <span className="ml-2 font-semibold text-gray-900">{issueData.summary.issuesToProjects}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Total Quantity:</span>
-                  <span className="ml-2 font-semibold text-gray-900">{issueData.summary.totalQuantity.toLocaleString()}</span>
-                </div>
-                {isAdmin && (
-                  <div>
-                    <span className="text-gray-600">Total Cost:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{formatCurrency(issueData.summary.totalCost)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From Store</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To Store</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issued To</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                  {isAdmin && (
-                    <>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Cost</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {(!issueData.data || issueData.data.length === 0) ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 8 : 6} className="px-6 py-4 text-center text-sm text-gray-500">
-                      No issues found for the selected period.
-                    </td>
-                  </tr>
-                ) : (
-                  issueData.data.map((issue: any) => (
-                    <tr key={issue.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(issue.issue_date)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {issue.from_store?.name || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {issue.to_store?.name || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {issue.issued_to_name || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {issue.product?.name || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {issue.quantity} {issue.product?.unit || ''}
-                      </td>
-                      {isAdmin && (
-                        <>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {issue.unit_cost ? formatCurrency(issue.unit_cost) : '-'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {issue.total_cost ? formatCurrency(issue.total_cost) : '-'}
-                          </td>
-                        </>
-                      )}
                     </tr>
                   ))
                 )}

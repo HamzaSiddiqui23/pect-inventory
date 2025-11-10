@@ -1,6 +1,32 @@
 export type UserRole = 'admin' | 'central_store_manager' | 'project_store_manager'
 export type StoreType = 'central' | 'project'
-export type UnitType = 'kg' | 'g' | 'tons' | 'pcs' | 'units' | 'm' | 'cm' | 'km' | 'l' | 'ml' | 'sqm' | 'sqft' | 'boxes' | 'bags' | 'bundles' | 'other'
+export type UnitType =
+  | 'kg'
+  | 'g'
+  | 'tons'
+  | 'pcs'
+  | 'units'
+  | 'nos'
+  | 'coil'
+  | 'm'
+  | 'cm'
+  | 'km'
+  | 'l'
+  | 'ml'
+  | 'sqm'
+  | 'sqft'
+  | 'boxes'
+  | 'bags'
+  | 'bundles'
+  | 'other'
+  | 'length'
+  | 'width'
+  | 'height'
+  | 'diameter'
+  | 'radius'
+  | 'area'
+  | 'volume'
+  | 'weight'
 
 export interface UserProfile {
   id: string
@@ -78,6 +104,34 @@ export interface InventoryItem {
   product?: Product
   average_cost?: number
   needsRestock?: boolean // Computed: quantity <= product.restock_level
+}
+
+export type InventoryMovementType = 'purchase' | 'issue_in' | 'issue_out'
+
+export interface InventoryMovementEntry {
+  id: string
+  store_id: string
+  product_id: string
+  reference_type: 'purchase' | 'issue'
+  reference_id: string
+  movement_type: InventoryMovementType
+  date: string
+  created_at: string
+  quantity: number
+  unit_cost?: number | null
+  total_cost?: number | null
+  notes?: string | null
+  issued_to_name?: string | null
+  source_store?: Store | null
+  destination_store?: Store | null
+}
+
+export interface InventoryMovementSummaryItem {
+  product: Product
+  received_quantity: number
+  issued_quantity: number
+  balance_quantity: number
+  movements: InventoryMovementEntry[]
 }
 
 export interface Issue {

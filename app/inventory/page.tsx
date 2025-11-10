@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getInventory } from '@/lib/actions/inventory'
+import { getInventory, getInventoryItemHistory } from '@/lib/actions/inventory'
+import type { InventoryMovementEntry } from '@/lib/types'
 import { getStores } from '@/lib/actions/purchases'
 import Image from 'next/image'
 import LogoutButton from '@/app/components/LogoutButton'
@@ -57,6 +58,21 @@ export default async function InventoryPage() {
   // (but only admins see prices)
   const { data: inventory, error } = await getInventory(defaultStoreId)
 
+  let historyMap: Record<string, InventoryMovementEntry[]> = {}
+  if (inventory?.length) {
+    const historyEntries = await Promise.all(
+      inventory.map(async (item) => {
+        const { data: history } = await getInventoryItemHistory(item.store_id, item.product_id)
+        return { itemId: item.id, history: (history as InventoryMovementEntry[]) || [] }
+      })
+    )
+
+    historyMap = historyEntries.reduce<Record<string, InventoryMovementEntry[]>>((acc, entry) => {
+      acc[entry.itemId] = entry.history
+      return acc
+    }, {})
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <nav className="bg-white shadow-md border-b" style={{ borderColor: '#0067ac' }}>
@@ -111,6 +127,7 @@ export default async function InventoryPage() {
           isAdmin={isAdmin}
           currentStoreId={defaultStoreId}
           canViewAllStores={isAdmin || isCentralStoreManager || isProjectStoreManager}
+          historyMap={historyMap}
         />
       </main>
     </div>
