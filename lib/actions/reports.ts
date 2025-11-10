@@ -496,7 +496,20 @@ export async function getInventoryMovementReport(
 
   const summaries = new Map<string, InventoryMovementSummaryItem>()
 
-  const ensureSummary = (product: Product) => {
+  const normalizeRecord = <T>(record: any): T | null => {
+    if (!record) {
+      return null
+    }
+    if (Array.isArray(record)) {
+      return (record[0] ?? null) as T | null
+    }
+    return record as T
+  }
+
+  const ensureSummary = (product: Product | null | undefined) => {
+    if (!product) {
+      return null
+    }
     if (!summaries.has(product.id)) {
       summaries.set(product.id, {
         product,
@@ -510,13 +523,19 @@ export async function getInventoryMovementReport(
   }
 
   projectPurchases?.forEach((purchase) => {
-    const summary = ensureSummary(purchase.product)
+    const product = normalizeRecord<Product>(purchase.product)
+    const summary = ensureSummary(product)
+    const purchaseStore = normalizeRecord<Store>(purchase.store)
+    const storeId = projectStoreId ?? purchaseStore?.id
+    if (!product || !summary || !storeId) {
+      return
+    }
     const quantity = Number(purchase.quantity)
     summary.received_quantity += quantity
     const entry: InventoryMovementEntry = {
       id: `purchase-${purchase.id}`,
-      store_id: projectStoreId,
-      product_id: purchase.product.id,
+      store_id: storeId,
+      product_id: product.id,
       reference_type: 'purchase',
       reference_id: purchase.id,
       movement_type: 'purchase',
@@ -534,13 +553,20 @@ export async function getInventoryMovementReport(
   })
 
   issuesIn?.forEach((issue) => {
-    const summary = ensureSummary(issue.product)
+    const product = normalizeRecord<Product>(issue.product)
+    const summary = ensureSummary(product)
+    const fromStore = normalizeRecord<Store>(issue.from_store)
+    const toStore = normalizeRecord<Store>(issue.to_store)
+    const storeId = projectStoreId ?? toStore?.id ?? fromStore?.id
+    if (!product || !summary || !storeId) {
+      return
+    }
     const quantity = Number(issue.quantity)
     summary.received_quantity += quantity
     const entry: InventoryMovementEntry = {
       id: `issue-in-${issue.id}`,
-      store_id: projectStoreId,
-      product_id: issue.product.id,
+      store_id: storeId,
+      product_id: product.id,
       reference_type: 'issue',
       reference_id: issue.id,
       movement_type: 'issue_in',
@@ -551,20 +577,27 @@ export async function getInventoryMovementReport(
       total_cost: issue.total_cost,
       notes: issue.notes,
       issued_to_name: issue.issued_to_name,
-      source_store: issue.from_store,
-      destination_store: issue.to_store,
+      source_store: fromStore,
+      destination_store: toStore,
     }
     summary.movements.push(entry)
   })
 
   issuesOut?.forEach((issue) => {
-    const summary = ensureSummary(issue.product)
+    const product = normalizeRecord<Product>(issue.product)
+    const summary = ensureSummary(product)
+    const fromStore = normalizeRecord<Store>(issue.from_store)
+    const toStore = normalizeRecord<Store>(issue.to_store)
+    const storeId = projectStoreId ?? fromStore?.id ?? toStore?.id
+    if (!product || !summary || !storeId) {
+      return
+    }
     const quantity = Number(issue.quantity)
     summary.issued_quantity += quantity
     const entry: InventoryMovementEntry = {
       id: `issue-out-${issue.id}`,
-      store_id: projectStoreId,
-      product_id: issue.product.id,
+      store_id: storeId,
+      product_id: product.id,
       reference_type: 'issue',
       reference_id: issue.id,
       movement_type: 'issue_out',
@@ -575,8 +608,8 @@ export async function getInventoryMovementReport(
       total_cost: issue.total_cost,
       notes: issue.notes,
       issued_to_name: issue.issued_to_name,
-      source_store: issue.from_store,
-      destination_store: issue.to_store,
+      source_store: fromStore,
+      destination_store: toStore,
     }
     summary.movements.push(entry)
   })
@@ -590,13 +623,7 @@ export async function getInventoryMovementReport(
       received_quantity: received,
       issued_quantity: issued,
       balance_quantity: currentBalance ?? received - issued,
-      movements: summary.movements.sort((a, b) => {
-        const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime()
-        if (dateDiff !== 0) {
-          return dateDiff
-        }
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      }),
+      movements: summary.movements
     }
   })
 

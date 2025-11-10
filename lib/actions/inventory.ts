@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import type { InventoryItem, InventoryMovementEntry } from '@/lib/types'
+import type { InventoryItem, InventoryMovementEntry, Store } from '@/lib/types'
 import { getErrorMessage } from '@/lib/utils/errors'
 
 export async function getInventory(storeId?: string, productId?: string) {
@@ -267,7 +267,7 @@ export async function getInventoryItemHistory(storeId: string, productId: string
       notes: purchase.notes,
       issued_to_name: null,
       source_store: null,
-      destination_store: purchase.store,
+      destination_store: (purchase.store as unknown as Store) ?? null,
     })
   })
 
@@ -286,8 +286,8 @@ export async function getInventoryItemHistory(storeId: string, productId: string
       total_cost: issue.total_cost,
       notes: issue.notes,
       issued_to_name: issue.issued_to_name,
-      source_store: issue.from_store,
-      destination_store: issue.to_store,
+      source_store: (issue.from_store as unknown as Store) ?? null,
+      destination_store: (issue.to_store as unknown as Store) ?? null,
     })
   })
 
@@ -306,8 +306,8 @@ export async function getInventoryItemHistory(storeId: string, productId: string
       total_cost: issue.total_cost,
       notes: issue.notes,
       issued_to_name: issue.issued_to_name,
-      source_store: issue.from_store,
-      destination_store: issue.to_store,
+      source_store: (issue.from_store as unknown as Store) ?? null,
+      destination_store: (issue.to_store as unknown as Store) ?? null,
     })
   })
 

@@ -234,6 +234,7 @@ export async function getIssueableStores() {
 
   const isAdmin = profile.role === 'admin'
   const isCentralStoreManager = profile.role === 'central_store_manager'
+  const isProjectStoreManager = profile.role === 'project_store_manager'
 
   // Get stores the user can issue from
   let fromStoresQuery = supabase
