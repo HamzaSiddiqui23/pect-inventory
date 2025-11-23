@@ -23,20 +23,59 @@ export async function createProduct(input: CreateProductInput) {
     return { error: 'Unauthorized: Admin access required' }
   }
 
-  const { data, error } = await supabase
+  // Check if a soft-deleted product exists with the same category_id and name
+  const { data: existingDeleted } = await supabase
     .from('products')
-    .insert({
-      category_id: input.category_id,
-      name: input.name,
-      unit: input.unit,
-      description: input.description || null,
-      restock_level: input.restock_level || 0,
-    })
-    .select(`
-      *,
-      category:categories(*)
-    `)
+    .select('id')
+    .eq('category_id', input.category_id)
+    .eq('name', input.name)
+    .not('deleted_at', 'is', null)
     .single()
+
+  let data
+  let error
+
+  if (existingDeleted) {
+    // Reinstate the soft-deleted product and update its fields
+    const { data: updated, error: updateError } = await supabase
+      .from('products')
+      .update({
+        unit: input.unit,
+        description: input.description || null,
+        restock_level: input.restock_level || 0,
+        deleted_at: null,
+        deleted_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingDeleted.id)
+      .select(`
+        *,
+        category:categories(*)
+      `)
+      .single()
+
+    data = updated
+    error = updateError
+  } else {
+    // Create new product
+    const { data: inserted, error: insertError } = await supabase
+      .from('products')
+      .insert({
+        category_id: input.category_id,
+        name: input.name,
+        unit: input.unit,
+        description: input.description || null,
+        restock_level: input.restock_level || 0,
+      })
+      .select(`
+        *,
+        category:categories(*)
+      `)
+      .single()
+
+    data = inserted
+    error = insertError
+  }
 
   if (error) {
     return { error: getErrorMessage(error) }
@@ -191,7 +230,7 @@ export async function importProductsFromCSV(rows: CSVProductRow[]) {
     categoryMap.set(cat.name.toLowerCase(), cat.id)
   })
 
-  // Get existing products to check for duplicates
+  // Get existing active products to check for duplicates
   const { data: existingProducts } = await supabase
     .from('products')
     .select('category_id, name')
@@ -200,6 +239,17 @@ export async function importProductsFromCSV(rows: CSVProductRow[]) {
   const existingProductSet = new Set<string>()
   existingProducts?.forEach((prod) => {
     existingProductSet.add(`${prod.category_id}:${prod.name.toLowerCase()}`)
+  })
+
+  // Get soft-deleted products to reinstate
+  const { data: deletedProducts } = await supabase
+    .from('products')
+    .select('id, category_id, name')
+    .not('deleted_at', 'is', null)
+
+  const deletedProductMap = new Map<string, string>()
+  deletedProducts?.forEach((prod) => {
+    deletedProductMap.set(`${prod.category_id}:${prod.name.toLowerCase()}`, prod.id)
   })
 
   // Valid unit types
@@ -219,8 +269,16 @@ export async function importProductsFromCSV(rows: CSVProductRow[]) {
     restock_level: number
   }> = []
 
+  const productsToReinstate: Array<{
+    id: string
+    unit: string
+    description: string | null
+    restock_level: number
+  }> = []
+
   const errors: Array<{ row: number; error: string }> = []
   let skipped = 0
+  let reinstated = 0
 
   // Validate and prepare products
   rows.forEach((row, index) => {
@@ -258,13 +316,6 @@ export async function importProductsFromCSV(rows: CSVProductRow[]) {
       return
     }
 
-    // Check for duplicates
-    const duplicateKey = `${categoryId}:${name.toLowerCase()}`
-    if (existingProductSet.has(duplicateKey)) {
-      skipped++
-      return // Skip this product
-    }
-
     // Validate restock_level
     let restockLevel = 0
     if (row.restock_level) {
@@ -276,7 +327,30 @@ export async function importProductsFromCSV(rows: CSVProductRow[]) {
       restockLevel = parsed
     }
 
-    // Add to valid products
+    // Check for duplicates
+    const duplicateKey = `${categoryId}:${name.toLowerCase()}`
+    if (existingProductSet.has(duplicateKey)) {
+      skipped++
+      return // Skip this product (already exists and is active)
+    }
+
+    // Check if product is soft-deleted and needs to be reinstated
+    const deletedProductId = deletedProductMap.get(duplicateKey)
+    if (deletedProductId) {
+      // Add to reinstatement list
+      productsToReinstate.push({
+        id: deletedProductId,
+        unit: unit as any,
+        description: row.description?.trim() || null,
+        restock_level: restockLevel,
+      })
+      reinstated++
+      // Add to existing set to prevent duplicates within the same import
+      existingProductSet.add(duplicateKey)
+      return
+    }
+
+    // Add to valid products (new product)
     validProducts.push({
       category_id: categoryId,
       name: name,
@@ -289,7 +363,29 @@ export async function importProductsFromCSV(rows: CSVProductRow[]) {
     existingProductSet.add(duplicateKey)
   })
 
-  // Insert valid products
+  // Reinstate soft-deleted products
+  if (productsToReinstate.length > 0) {
+    for (const product of productsToReinstate) {
+      const { error: reinstateError } = await supabase
+        .from('products')
+        .update({
+          unit: product.unit,
+          description: product.description,
+          restock_level: product.restock_level,
+          deleted_at: null,
+          deleted_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', product.id)
+
+      if (reinstateError) {
+        errors.push({ row: 0, error: `Failed to reinstate product: ${getErrorMessage(reinstateError)}` })
+        reinstated-- // Decrement since it failed
+      }
+    }
+  }
+
+  // Insert new products
   let created = 0
   if (validProducts.length > 0) {
     const { error: insertError } = await supabase
@@ -307,7 +403,7 @@ export async function importProductsFromCSV(rows: CSVProductRow[]) {
 
   return {
     data: {
-      created,
+      created: created + reinstated, // Include reinstated products in created count
       skipped,
       errors,
     } as ImportProductResult,
