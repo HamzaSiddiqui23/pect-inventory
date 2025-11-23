@@ -138,18 +138,36 @@ export async function deleteCentralStore(storeId: string) {
     return { error: 'Store not found or not a central store' }
   }
 
-  // Check if store has inventory
-  const { data: inventory } = await supabase
+  // Check if store has inventory with quantity > 0
+  const { data: inventoryItems, error: inventoryError } = await supabase
     .from('inventory_items')
-    .select('id')
+    .select('id, quantity')
     .eq('store_id', storeId)
-    .limit(1)
-    .single()
 
-  if (inventory) {
-    return { error: 'Cannot delete central store with existing inventory. Please transfer or remove inventory first.' }
+  if (inventoryError) {
+    return { error: getErrorMessage(inventoryError) }
   }
 
+  // Check if any inventory item has quantity > 0
+  const hasNonZeroInventory = inventoryItems?.some(item => Number(item.quantity) > 0)
+
+  if (hasNonZeroInventory) {
+    return { error: 'Cannot delete central store with inventory items that have quantity > 0. Please transfer or remove inventory first.' }
+  }
+
+  // If there are inventory items but all have quantity 0, delete them
+  if (inventoryItems && inventoryItems.length > 0) {
+    const { error: deleteInventoryError } = await supabase
+      .from('inventory_items')
+      .delete()
+      .eq('store_id', storeId)
+
+    if (deleteInventoryError) {
+      return { error: getErrorMessage(deleteInventoryError) }
+    }
+  }
+
+  // Soft delete the store
   const { error } = await supabase
     .from('stores')
     .update({

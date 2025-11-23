@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { createProject, deleteProject } from '@/lib/actions/projects'
+import { createProject, updateProject, deleteProject } from '@/lib/actions/projects'
 import { getErrorMessage } from '@/lib/utils/errors'
 import type { Project } from '@/lib/types'
 
 export default function ProjectsList({ initialProjects }: { initialProjects: Project[] }) {
   const [projects, setProjects] = useState(initialProjects)
   const [showModal, setShowModal] = useState(false)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
@@ -22,21 +23,48 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
     setError(null)
     setLoading(true)
 
-    const result = await createProject({
-      name: formData.name,
-      description: formData.description || undefined,
-      location: formData.location || undefined,
-      status: formData.status || 'active',
-    })
+    if (editingProject) {
+      const result = await updateProject({
+        id: editingProject.id,
+        name: formData.name || undefined,
+        description: formData.description || undefined,
+        location: formData.location || undefined,
+        status: formData.status || undefined,
+      })
 
-    if (result.error) {
-      setError(getErrorMessage(result.error))
-      setLoading(false)
-      return
+      if (result.error) {
+        setError(getErrorMessage(result.error))
+        setLoading(false)
+        return
+      }
+    } else {
+      const result = await createProject({
+        name: formData.name,
+        description: formData.description || undefined,
+        location: formData.location || undefined,
+        status: formData.status || 'active',
+      })
+
+      if (result.error) {
+        setError(getErrorMessage(result.error))
+        setLoading(false)
+        return
+      }
     }
 
     // Refresh projects list
     window.location.reload()
+  }
+
+  const handleEdit = (project: Project) => {
+    setEditingProject(project)
+    setFormData({
+      name: project.name,
+      description: project.description || '',
+      location: project.location || '',
+      status: project.status,
+    })
+    setShowModal(true)
   }
 
   const handleDelete = async (projectId: string) => {
@@ -58,7 +86,17 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
     <div>
       <div className="mb-4 flex justify-end">
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setEditingProject(null)
+            setFormData({
+              name: '',
+              description: '',
+              location: '',
+              status: 'active',
+            })
+            setError(null)
+            setShowModal(true)
+          }}
           className="rounded-md px-4 py-2 text-sm font-semibold text-white transition-colors"
           style={{ backgroundColor: '#0067ac' }}
           onMouseEnter={(e) => {
@@ -74,9 +112,9 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4" style={{ color: '#0067ac' }}>
-              Add New Project
+              {editingProject ? 'Edit Project' : 'Add New Project'}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
@@ -138,6 +176,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
                   type="button"
                   onClick={() => {
                     setShowModal(false)
+                    setEditingProject(null)
                     setError(null)
                     setFormData({
                       name: '',
@@ -156,7 +195,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
                   className="flex-1 rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   style={{ backgroundColor: '#0067ac' }}
                 >
-                  {loading ? 'Creating...' : 'Create Project'}
+                  {loading ? (editingProject ? 'Updating...' : 'Creating...') : (editingProject ? 'Update Project' : 'Create Project')}
                 </button>
               </div>
             </form>
@@ -214,6 +253,12 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      onClick={() => handleEdit(project)}
+                      className="text-[#0067ac] hover:text-[#005a94] mr-4"
+                    >
+                      Edit
+                    </button>
                     <button
                       onClick={() => handleDelete(project.id)}
                       className="text-red-600 hover:text-red-900"

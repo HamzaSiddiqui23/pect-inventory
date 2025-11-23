@@ -13,26 +13,41 @@ export async function createPurchase(input: CreatePurchaseInput) {
     return { error: 'Not authenticated' }
   }
 
-  // Only admins and central store managers can create purchases
+  // Admins, central store managers, and project store managers can create purchases
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role')
+    .select('role, project_id')
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'central_store_manager'].includes(profile.role)) {
-    return { error: 'Unauthorized: Admin or Central Store Manager access required' }
+  if (!profile || !['admin', 'central_store_manager', 'project_store_manager'].includes(profile.role)) {
+    return { error: 'Unauthorized: Admin, Central Store Manager, or Project Store Manager access required' }
   }
 
-  // Verify it's for central store
+  // Verify store exists
   const { data: store } = await supabase
     .from('stores')
-    .select('type')
+    .select('type, project_id')
     .eq('id', input.store_id)
     .single()
 
-  if (!store || store.type !== 'central') {
-    return { error: 'Purchases can only be made for central store' }
+  if (!store) {
+    return { error: 'Store not found' }
+  }
+
+  // Non-admins can only create purchases for their own store
+  if (profile.role !== 'admin') {
+    if (profile.role === 'central_store_manager') {
+      // Central store managers can only create purchases for central stores
+      if (store.type !== 'central') {
+        return { error: 'Central store managers can only create purchases for central stores' }
+      }
+    } else if (profile.role === 'project_store_manager') {
+      // Project store managers can only create purchases for their project store
+      if (store.type !== 'project' || store.project_id !== profile.project_id) {
+        return { error: 'Project store managers can only create purchases for their own project store' }
+      }
+    }
   }
 
   const total_cost = input.quantity * input.unit_cost
@@ -76,26 +91,40 @@ export async function updatePurchase(input: UpdatePurchaseInput) {
     return { error: 'Not authenticated' }
   }
 
-  // Only admins can update purchases
+  // Admins, central store managers, and project store managers can update purchases
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role')
+    .select('role, project_id')
     .eq('id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'admin') {
-    return { error: 'Unauthorized: Admin access required' }
+  if (!profile || !['admin', 'central_store_manager', 'project_store_manager'].includes(profile.role)) {
+    return { error: 'Unauthorized: Admin, Central Store Manager, or Project Store Manager access required' }
   }
 
-  // Get current purchase to calculate new total cost
+  // Get current purchase to calculate new total cost and verify ownership
   const { data: currentPurchase } = await supabase
     .from('purchases')
-    .select('quantity, unit_cost')
+    .select('quantity, unit_cost, store_id, store:stores(type, project_id)')
     .eq('id', input.id)
     .single()
 
   if (!currentPurchase) {
     return { error: 'Purchase not found' }
+  }
+
+  // Non-admins can only update purchases for their own store
+  if (profile.role !== 'admin') {
+    const currentStore = currentPurchase.store as any
+    if (profile.role === 'central_store_manager') {
+      if (currentStore.type !== 'central') {
+        return { error: 'Central store managers can only update purchases for central stores' }
+      }
+    } else if (profile.role === 'project_store_manager') {
+      if (currentStore.type !== 'project' || currentStore.project_id !== profile.project_id) {
+        return { error: 'Project store managers can only update purchases for their own project store' }
+      }
+    }
   }
 
   const quantity = input.quantity ?? currentPurchase.quantity
@@ -106,15 +135,28 @@ export async function updatePurchase(input: UpdatePurchaseInput) {
     total_cost,
   }
   if (input.store_id !== undefined) {
-    // Verify new store is a central store if changing store
+    // Verify new store exists and user has permission
     const { data: newStore } = await supabase
       .from('stores')
-      .select('type')
+      .select('type, project_id')
       .eq('id', input.store_id)
       .single()
     
-    if (!newStore || newStore.type !== 'central') {
-      return { error: 'Purchases can only be made for central stores' }
+    if (!newStore) {
+      return { error: 'Store not found' }
+    }
+
+    // Non-admins can only change to their own store
+    if (profile.role !== 'admin') {
+      if (profile.role === 'central_store_manager') {
+        if (newStore.type !== 'central') {
+          return { error: 'Central store managers can only update purchases for central stores' }
+        }
+      } else if (profile.role === 'project_store_manager') {
+        if (newStore.type !== 'project' || newStore.project_id !== profile.project_id) {
+          return { error: 'Project store managers can only update purchases for their own project store' }
+        }
+      }
     }
     updateData.store_id = input.store_id
   }
@@ -257,9 +299,9 @@ export async function getStores() {
     .order('type', { ascending: true })
     .order('name', { ascending: true })
 
-  // Project store managers can only see their store + all central stores
+  // Filter stores based on user role
   if (profile?.role === 'project_store_manager' && profile.project_id) {
-    // Get their project store and all central stores
+    // Project store managers can only see their own project store
     const { data: projectStore } = await supabase
       .from('stores')
       .select('id')
@@ -268,26 +310,17 @@ export async function getStores() {
       .is('deleted_at', null)
       .single()
     
-    const { data: centralStores } = await supabase
-      .from('stores')
-      .select('id')
-      .eq('type', 'central')
-      .is('deleted_at', null)
-    
-    const allowedStoreIds: string[] = []
-    if (projectStore) allowedStoreIds.push(projectStore.id)
-    if (centralStores) {
-      centralStores.forEach(store => allowedStoreIds.push(store.id))
-    }
-    
-    if (allowedStoreIds.length > 0) {
-      query = query.in('id', allowedStoreIds)
+    if (projectStore) {
+      query = query.eq('id', projectStore.id)
     } else {
-      // No stores found, return empty result
+      // No store found, return empty result
       query = query.eq('id', '00000000-0000-0000-0000-000000000000') // Non-existent ID
     }
+  } else if (profile?.role === 'central_store_manager') {
+    // Central store managers can only see central stores
+    query = query.eq('type', 'central')
   }
-  // Admins and central store managers can see all stores
+  // Admins can see all stores
 
   const { data, error } = await query
 

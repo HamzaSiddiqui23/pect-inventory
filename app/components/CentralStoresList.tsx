@@ -61,7 +61,7 @@ export default function CentralStoresList({ initialStores }: { initialStores: St
   }
 
   const handleDelete = async (storeId: string) => {
-    if (!confirm('Are you sure you want to delete this central store? This action cannot be undone if the store has inventory.')) {
+    if (!confirm('Are you sure you want to delete this central store? This will delete the store and all inventory items with quantity 0. Inventory items with quantity > 0 must be transferred or removed first.')) {
       return
     }
 

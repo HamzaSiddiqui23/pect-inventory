@@ -1,35 +1,25 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPurchase, updatePurchase, deletePurchase, getPurchases } from '@/lib/actions/purchases'
-import { createProduct } from '@/lib/actions/products'
 import { getErrorMessage } from '@/lib/utils/errors'
-import type { Purchase, Product, Store, Category, UnitType } from '@/lib/types'
-import { UNIT_OPTIONS } from '@/lib/constants/unitOptions'
+import type { Purchase, Product, Store, Category } from '@/lib/types'
 
 export default function PurchasesList({ 
   initialPurchases, 
   products, 
   categories,
-  centralStores,
+  stores,
   isAdmin 
 }: { 
   initialPurchases: Purchase[]
   products: Product[]
   categories: Category[]
-  centralStores: Store[]
+  stores: Store[]
   isAdmin: boolean
 }) {
   const sortProducts = (items: Product[]) =>
     [...items].sort((a, b) => a.name.localeCompare(b.name))
-
-  const createInitialProductForm = () => ({
-    name: '',
-    category_id: categories[0]?.id ?? '',
-    unit: (UNIT_OPTIONS[0]?.value ?? 'units') as UnitType,
-    description: '',
-    restock_level: '',
-  })
 
   const [purchases, setPurchases] = useState(initialPurchases)
   const [productOptions, setProductOptions] = useState<Product[]>(sortProducts(products))
@@ -37,13 +27,12 @@ export default function PurchasesList({
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [productError, setProductError] = useState<string | null>(null)
   const [filterProductId, setFilterProductId] = useState<string>('')
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
   const [productSearch, setProductSearch] = useState('')
-  const [showProductModal, setShowProductModal] = useState(false)
-  const [savingProduct, setSavingProduct] = useState(false)
+  const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const productSearchRef = useRef<HTMLDivElement>(null)
   const [formData, setFormData] = useState({
     store_id: '',
     product_id: '',
@@ -52,24 +41,24 @@ export default function PurchasesList({
     purchase_date: new Date().toISOString().split('T')[0],
     notes: '',
   })
-  const [newProductData, setNewProductData] = useState<{
-    name: string
-    category_id: string
-    unit: UnitType
-    description: string
-    restock_level: string
-  }>(createInitialProductForm)
 
   useEffect(() => {
     setProductOptions(sortProducts(products))
   }, [products])
 
+  // Close dropdown when clicking outside
   useEffect(() => {
-    setNewProductData((prev) => ({
-      ...prev,
-      category_id: prev.category_id || categories[0]?.id || '',
-    }))
-  }, [categories])
+    const handleClickOutside = (event: MouseEvent) => {
+      if (productSearchRef.current && !productSearchRef.current.contains(event.target as Node)) {
+        setShowProductDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase()
@@ -107,71 +96,14 @@ export default function PurchasesList({
     return Array.from(unique.values())
   }, [filteredProducts, formData.product_id, productOptions])
 
-  const handleProductModalOpen = () => {
-    setProductError(null)
-    setNewProductData(createInitialProductForm())
-    setShowProductModal(true)
-  }
+  const selectedProduct = useMemo(() => {
+    return productOptions.find((p) => p.id === formData.product_id)
+  }, [productOptions, formData.product_id])
 
-  const handleProductModalClose = () => {
-    setShowProductModal(false)
-    setSavingProduct(false)
-    setProductError(null)
-    setNewProductData(createInitialProductForm())
-  }
-
-  const handleCreateProduct = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setProductError(null)
-
-    if (!newProductData.name.trim()) {
-      setProductError('Product name is required')
-      return
-    }
-
-    if (!newProductData.category_id) {
-      setProductError('Category is required')
-      return
-    }
-
-    const restockLevel = newProductData.restock_level
-      ? parseFloat(newProductData.restock_level)
-      : undefined
-
-    if (restockLevel !== undefined && (isNaN(restockLevel) || restockLevel < 0)) {
-      setProductError('Restock level must be 0 or greater')
-      return
-    }
-
-    setSavingProduct(true)
-
-    const result = await createProduct({
-      name: newProductData.name.trim(),
-      category_id: newProductData.category_id,
-      unit: newProductData.unit,
-      description: newProductData.description.trim()
-        ? newProductData.description.trim()
-        : undefined,
-      restock_level: restockLevel,
-    })
-
-    if (result.error) {
-      setProductError(getErrorMessage(result.error))
-      setSavingProduct(false)
-      return
-    }
-
-    const createdProduct = result.data as Product
-    setProductOptions((prev) => sortProducts([...prev, createdProduct]))
-    setFormData((prev) => ({
-      ...prev,
-      product_id: createdProduct.id,
-    }))
-    setProductSearch(createdProduct.name)
-    setSavingProduct(false)
-    setShowProductModal(false)
-    setProductError(null)
-    setNewProductData(createInitialProductForm())
+  const handleProductSelect = (product: Product) => {
+    setFormData({ ...formData, product_id: product.id })
+    setProductSearch(product.name)
+    setShowProductDropdown(false)
   }
 
   // Filter purchases based on selected filters
@@ -207,7 +139,7 @@ export default function PurchasesList({
     setLoading(true)
 
     if (!formData.store_id) {
-      setError('Please select a central store')
+      setError('Please select a store')
       setLoading(false)
       return
     }
@@ -281,6 +213,7 @@ export default function PurchasesList({
     })
     const selectedProduct = productOptions.find((product) => product.id === purchase.product_id)
     setProductSearch(selectedProduct?.name ?? '')
+    setShowProductDropdown(false)
     setShowModal(true)
   }
 
@@ -315,6 +248,7 @@ export default function PurchasesList({
     })
     setError(null)
     setProductSearch('')
+    setShowProductDropdown(false)
   }
 
   return (
@@ -409,7 +343,7 @@ export default function PurchasesList({
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Central Store *
+                  Store *
                 </label>
                 <select
                   required={!editingPurchase}
@@ -418,55 +352,62 @@ export default function PurchasesList({
                   disabled={!!editingPurchase && !isAdmin}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac] disabled:bg-gray-100 disabled:cursor-not-allowed"
                 >
-                  <option value="">Select a central store</option>
-                  {centralStores.map((store) => (
+                  <option value="">Select a store</option>
+                  {stores.map((store) => (
                     <option key={store.id} value={store.id}>
-                      {store.name}
+                      {store.name}{store.type === 'project' && store.project ? ` (${store.project.name})` : ''}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-700">
-                    Product *
-                  </label>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={handleProductModalOpen}
-                      className="text-sm font-medium text-[#0067ac] hover:underline"
-                    >
-                      Add new product
-                    </button>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Product *
+                </label>
+                <div ref={productSearchRef} className="relative">
+                  <input
+                    type="text"
+                    value={productSearch}
+                    onChange={(e) => {
+                      setProductSearch(e.target.value)
+                      setShowProductDropdown(true)
+                      if (!e.target.value) {
+                        setFormData({ ...formData, product_id: '' })
+                      }
+                    }}
+                    onFocus={() => setShowProductDropdown(true)}
+                    placeholder="Search by name or category..."
+                    disabled={!!editingPurchase && !isAdmin}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac] disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  />
+                  {showProductDropdown && productSelectOptions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      {productSelectOptions.map((product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() => handleProductSelect(product)}
+                          className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                        >
+                          <div className="font-medium text-gray-900">{product.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {product.category?.name} • {product.unit}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {showProductDropdown && productSearch && productSelectOptions.length === 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-4">
+                      <p className="text-sm text-gray-500 text-center">
+                        No matching products found
+                      </p>
+                    </div>
                   )}
                 </div>
-                <input
-                  type="text"
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  placeholder="Search by name or category"
-                  className="mb-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                />
-                <select
-                  required={!editingPurchase}
-                  value={formData.product_id}
-                  onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
-                  disabled={!!editingPurchase && !isAdmin}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac] disabled:bg-gray-100 disabled:cursor-not-allowed"
-                >
-                  <option value="">Select a product</option>
-                  {productSelectOptions.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} ({product.category?.name}) - {product.unit}
-                    </option>
-                  ))}
-                </select>
-                {productSearch && productSelectOptions.length === 0 && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    {isAdmin
-                      ? 'No matching products. Use "Add new product" to create one.'
-                      : 'No matching products. Please contact an admin to add it.'}
+                {!selectedProduct && formData.product_id && (
+                  <p className="mt-1 text-xs text-red-500">
+                    Please select a valid product
                   </p>
                 )}
               </div>
@@ -564,139 +505,6 @@ export default function PurchasesList({
         </div>
       )}
 
-      {showProductModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4" style={{ color: '#0067ac' }}>
-              Add New Product
-            </h3>
-            <form onSubmit={handleCreateProduct} className="space-y-4">
-              {productError && (
-                <div className="rounded-md bg-red-50 p-3 border border-red-200">
-                  <div className="text-sm text-red-800">{productError}</div>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Product Name *
-                </label>
-                <input
-                  type="text"
-                  value={newProductData.name}
-                  onChange={(e) =>
-                    setNewProductData({ ...newProductData, name: e.target.value })
-                  }
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                  placeholder="Enter product name"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category *
-                </label>
-                <select
-                  value={newProductData.category_id}
-                  onChange={(e) =>
-                    setNewProductData({ ...newProductData, category_id: e.target.value })
-                  }
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac] disabled:bg-gray-100"
-                  required
-                  disabled={categories.length === 0}
-                >
-                  <option value="">Select a category</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-                {categories.length === 0 && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    No categories available. Create a category first.
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Unit *
-                </label>
-                <select
-                  value={newProductData.unit}
-                  onChange={(e) =>
-                    setNewProductData({ ...newProductData, unit: e.target.value as UnitType })
-                  }
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                  required
-                >
-                  {UNIT_OPTIONS.map((unit) => (
-                    <option key={unit.value} value={unit.value}>
-                      {unit.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Restock Level
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={newProductData.restock_level}
-                  onChange={(e) =>
-                    setNewProductData({ ...newProductData, restock_level: e.target.value })
-                  }
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={newProductData.description}
-                  onChange={(e) =>
-                    setNewProductData({ ...newProductData, description: e.target.value })
-                  }
-                  rows={3}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                  placeholder="Optional description"
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleProductModalClose}
-                  className="flex-1 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingProduct || categories.length === 0}
-                  className="flex-1 rounded-md px-4 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70"
-                  style={{ backgroundColor: '#0067ac' }}
-                  onMouseEnter={(e) => {
-                    if (!e.currentTarget.disabled) {
-                      e.currentTarget.style.backgroundColor = '#005a94'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!e.currentTarget.disabled) {
-                      e.currentTarget.style.backgroundColor = '#0067ac'
-                    }
-                  }}
-                >
-                  {savingProduct ? 'Saving...' : 'Save Product'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       <div className="rounded-lg bg-white shadow-md border overflow-hidden" style={{ borderColor: '#E77817' }}>
         <table className="min-w-full divide-y divide-gray-200">
@@ -706,7 +514,7 @@ export default function PurchasesList({
                 Date
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Central Store
+                Store
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Product

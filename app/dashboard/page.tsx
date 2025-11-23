@@ -183,6 +183,19 @@ export default async function DashboardPage() {
           {(profile?.role === 'central_store_manager' || profile?.role === 'project_store_manager') && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
               <a
+                href="/purchases"
+                className="block p-6 border-2 rounded-lg hover:shadow-lg transition-shadow"
+                style={{ borderColor: '#0067ac' }}
+              >
+                <h3 className="text-xl font-semibold mb-2" style={{ color: '#0067ac' }}>
+                  Purchases
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  View and manage purchase history for your store.
+                </p>
+              </a>
+
+              <a
                 href="/issues"
                 className="block p-6 border-2 rounded-lg hover:shadow-lg transition-shadow"
                 style={{ borderColor: '#0067ac' }}

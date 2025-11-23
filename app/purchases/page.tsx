@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getPurchases } from '@/lib/actions/purchases'
-import { getCentralStores } from '@/lib/actions/stores'
+import { getPurchases, getStores } from '@/lib/actions/purchases'
 import { getProducts } from '@/lib/actions/products'
 import { getCategories } from '@/lib/actions/categories'
 import Image from 'next/image'
@@ -19,18 +18,18 @@ export default async function PurchasesPage() {
     redirect('/login')
   }
 
-  // Check if user is admin or central store manager
+  // Check if user is admin, central store manager, or project store manager
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('role')
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'central_store_manager'].includes(profile.role)) {
+  if (!profile || !['admin', 'central_store_manager', 'project_store_manager'].includes(profile.role)) {
     redirect('/dashboard')
   }
 
-  const { data: centralStores } = await getCentralStores()
+  const { data: stores } = await getStores()
   const { data: purchases, error } = await getPurchases()
   const { data: products } = await getProducts()
   const { data: categories } = await getCategories()
@@ -87,7 +86,7 @@ export default async function PurchasesPage() {
           initialPurchases={purchases || []} 
           products={products || []} 
           categories={categories || []}
-          centralStores={centralStores || []}
+          stores={stores || []}
           isAdmin={profile.role === 'admin'}
         />
       </main>
