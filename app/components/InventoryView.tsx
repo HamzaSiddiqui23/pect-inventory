@@ -23,6 +23,8 @@ export default function InventoryView({
   const [searchName, setSearchName] = useState<string>('')
   const [searchCategory, setSearchCategory] = useState<string>('')
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
 
   // Get unique categories from inventory
   const categories = Array.from(
@@ -53,6 +55,22 @@ export default function InventoryView({
     return true
   })
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredInventory.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedInventory = filteredInventory.slice(startIndex, endIndex)
+
+  // Reset to page 1 when filters change
+  const handleFilterChange = () => {
+    setCurrentPage(1)
+  }
+
+  const handleItemsPerPageChange = (value: number) => {
+    setItemsPerPage(value)
+    setCurrentPage(1)
+  }
+
   return (
     <div>
       {/* Search and Filter Section */}
@@ -65,7 +83,10 @@ export default function InventoryView({
               </label>
               <select
                 value={selectedStoreId || ''}
-                onChange={(e) => setSelectedStoreId(e.target.value || undefined)}
+                onChange={(e) => {
+                  setSelectedStoreId(e.target.value || undefined)
+                  handleFilterChange()
+                }}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
               >
                 <option value="">All Stores</option>
@@ -84,7 +105,10 @@ export default function InventoryView({
             <input
               type="text"
               value={searchName}
-              onChange={(e) => setSearchName(e.target.value)}
+              onChange={(e) => {
+                setSearchName(e.target.value)
+                handleFilterChange()
+              }}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
               placeholder="Enter product name..."
             />
@@ -95,7 +119,10 @@ export default function InventoryView({
             </label>
             <select
               value={searchCategory}
-              onChange={(e) => setSearchCategory(e.target.value)}
+              onChange={(e) => {
+                setSearchCategory(e.target.value)
+                handleFilterChange()
+              }}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
             >
               <option value="">All Categories</option>
@@ -107,20 +134,35 @@ export default function InventoryView({
             </select>
           </div>
         </div>
-        {(searchName || searchCategory || selectedStoreId) && (
-          <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex items-center justify-between">
+          {(searchName || searchCategory || selectedStoreId) && (
             <button
               onClick={() => {
                 setSearchName('')
                 setSearchCategory('')
                 setSelectedStoreId(undefined)
+                handleFilterChange()
               }}
               className="text-sm text-gray-600 hover:text-gray-900 underline"
             >
               Clear Filters
             </button>
+          )}
+          <div className="flex items-center gap-2 ml-auto">
+            <label className="text-sm text-gray-700">Items per page:</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+            </select>
           </div>
-        )}
+        </div>
       </div>
 
       <div className="rounded-lg bg-white shadow-md border overflow-hidden" style={{ borderColor: '#E77817' }}>
@@ -162,7 +204,7 @@ export default function InventoryView({
                   </td>
                 </tr>
               ) : (
-                filteredInventory.map((item) => {
+                paginatedInventory.map((item) => {
                   const needsRestock = item.product?.restock_level !== undefined && 
                                        item.product.restock_level > 0 && 
                                        item.quantity <= item.product.restock_level
@@ -233,6 +275,63 @@ export default function InventoryView({
             </tbody>
           </table>
         </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between">
+          <div className="text-sm text-gray-700">
+            Showing {startIndex + 1} to {Math.min(endIndex, filteredInventory.length)} of {filteredInventory.length} items
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <div className="flex gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                // Show first page, last page, current page, and pages around current
+                if (
+                  page === 1 ||
+                  page === totalPages ||
+                  (page >= currentPage - 1 && page <= currentPage + 1)
+                ) {
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-2 text-sm font-medium rounded-md ${
+                        currentPage === page
+                          ? 'text-white'
+                          : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                      }`}
+                      style={currentPage === page ? { backgroundColor: '#0067ac' } : {}}
+                    >
+                      {page}
+                    </button>
+                  )
+                } else if (page === currentPage - 2 || page === currentPage + 2) {
+                  return (
+                    <span key={page} className="px-3 py-2 text-sm text-gray-500">
+                      ...
+                    </span>
+                  )
+                }
+                return null
+              })}
+            </div>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

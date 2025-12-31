@@ -30,6 +30,8 @@ export default function IssuesList({
   const [filterProductId, setFilterProductId] = useState<string>('')
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
   const [formData, setFormData] = useState({
     from_store_id: '',
     to_store_id: '',
@@ -223,6 +225,22 @@ export default function IssuesList({
     return products.filter((product) => availableProductIds.has(product.id))
   }, [products, selectedFromStore, availableProductIds])
 
+  // Pagination calculations
+  const totalPages = Math.ceil(issues.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedIssues = issues.slice(startIndex, endIndex)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [filterProductId, filterStartDate, filterEndDate])
+
+  const handleItemsPerPageChange = (value: number) => {
+    setItemsPerPage(value)
+    setCurrentPage(1)
+  }
+
   useEffect(() => {
     if (
       formData.product_id &&
@@ -281,7 +299,7 @@ export default function IssuesList({
             />
           </div>
         </div>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex items-center justify-between">
           <button
             onClick={() => {
               setFilterProductId('')
@@ -292,6 +310,20 @@ export default function IssuesList({
           >
             Clear Filters
           </button>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-700">Items per page:</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -522,7 +554,7 @@ export default function IssuesList({
                 </td>
               </tr>
             ) : (
-              issues.map((issue) => (
+              paginatedIssues.map((issue) => (
                 <tr key={issue.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {new Date(issue.issue_date).toLocaleDateString()}
@@ -548,6 +580,63 @@ export default function IssuesList({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between">
+          <div className="text-sm text-gray-700">
+            Showing {startIndex + 1} to {Math.min(endIndex, issues.length)} of {issues.length} issues
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <div className="flex gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                // Show first page, last page, current page, and pages around current
+                if (
+                  page === 1 ||
+                  page === totalPages ||
+                  (page >= currentPage - 1 && page <= currentPage + 1)
+                ) {
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-2 text-sm font-medium rounded-md ${
+                        currentPage === page
+                          ? 'text-white'
+                          : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                      }`}
+                      style={currentPage === page ? { backgroundColor: '#0067ac' } : {}}
+                    >
+                      {page}
+                    </button>
+                  )
+                } else if (page === currentPage - 2 || page === currentPage + 2) {
+                  return (
+                    <span key={page} className="px-3 py-2 text-sm text-gray-500">
+                      ...
+                    </span>
+                  )
+                }
+                return null
+              })}
+            </div>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
