@@ -170,16 +170,39 @@ export async function getProducts() {
     return { data: null, error: 'Not authenticated' }
   }
 
-  const { data, error } = await supabase
-    .from('products')
-    .select(`
-      *,
-      category:categories(*)
-    `)
-    .is('deleted_at', null)
-    .order('name', { ascending: true })
+  const pageSize = 1000
+  const allProducts: any[] = []
+  let from = 0
 
-  return { data, error }
+  while (true) {
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        category:categories(*)
+      `)
+      .is('deleted_at', null)
+      .order('name', { ascending: true })
+      .range(from, from + pageSize - 1)
+
+    if (error) {
+      return { data: null, error }
+    }
+
+    if (!data || data.length === 0) {
+      break
+    }
+
+    allProducts.push(...data)
+
+    if (data.length < pageSize) {
+      break
+    }
+
+    from += pageSize
+  }
+
+  return { data: allProducts, error: null }
 }
 
 export interface CSVProductRow {

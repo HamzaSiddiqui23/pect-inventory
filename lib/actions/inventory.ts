@@ -77,15 +77,33 @@ export async function getInventory(storeId?: string, productId?: string) {
     query = query.eq('product_id', productId)
   }
 
-  const { data, error } = await query
+  const pageSize = 1000
+  const allInventoryItems: any[] = []
+  let from = 0
 
-  if (error || !data) {
-    return { data: null, error: error?.message || 'Failed to fetch inventory' }
+  while (true) {
+    const { data, error } = await query.range(from, from + pageSize - 1)
+
+    if (error) {
+      return { data: null, error: error.message || 'Failed to fetch inventory' }
+    }
+
+    if (!data || data.length === 0) {
+      break
+    }
+
+    allInventoryItems.push(...data)
+
+    if (data.length < pageSize) {
+      break
+    }
+
+    from += pageSize
   }
 
   // Calculate average cost for each item (only for admins - others don't see prices)
   const inventoryWithCosts = await Promise.all(
-    data.map(async (item) => {
+    allInventoryItems.map(async (item) => {
       let avgCost = 0
       // Only admins can see costs/prices
       if (isAdmin) {
