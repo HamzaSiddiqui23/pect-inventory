@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createIssue, getIssues } from '@/lib/actions/issues'
 import { getInventory } from '@/lib/actions/inventory'
 import { getErrorMessage } from '@/lib/utils/errors'
@@ -22,16 +22,26 @@ export default function IssuesList({
   products: Product[]
   userProfile: UserProfile
 }) {
+  const sortProducts = (items: Product[]) =>
+    [...items].sort((a, b) => a.name.localeCompare(b.name))
+
   const [issues, setIssues] = useState(initialIssues)
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [availableInventory, setAvailableInventory] = useState<any[]>([])
+  const [productOptions, setProductOptions] = useState<Product[]>(sortProducts(products))
   const [filterProductId, setFilterProductId] = useState<string>('')
+  const [filterProductSearch, setFilterProductSearch] = useState('')
+  const [showFilterProductDropdown, setShowFilterProductDropdown] = useState(false)
+  const filterProductSearchRef = useRef<HTMLDivElement>(null)
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
+  const [productSearch, setProductSearch] = useState('')
+  const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const productSearchRef = useRef<HTMLDivElement>(null)
   const [formData, setFormData] = useState({
     from_store_id: '',
     to_store_id: '',
@@ -41,6 +51,26 @@ export default function IssuesList({
     issue_date: new Date().toISOString().split('T')[0],
     notes: '',
   })
+
+  useEffect(() => {
+    setProductOptions(sortProducts(products))
+  }, [products])
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterProductSearchRef.current && !filterProductSearchRef.current.contains(event.target as Node)) {
+        setShowFilterProductDropdown(false)
+      }
+      if (productSearchRef.current && !productSearchRef.current.contains(event.target as Node)) {
+        setShowProductDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   // Filter issues based on selected filters
   useEffect(() => {
@@ -206,6 +236,8 @@ export default function IssuesList({
     })
     setError(null)
     setAvailableInventory([])
+    setProductSearch('')
+    setShowProductDropdown(false)
   }
 
   const availableQuantity = availableInventory.find(
@@ -221,9 +253,45 @@ export default function IssuesList({
   }, [availableInventory])
 
   const filteredProducts = useMemo(() => {
-    if (!selectedFromStore) return products
-    return products.filter((product) => availableProductIds.has(product.id))
-  }, [products, selectedFromStore, availableProductIds])
+    if (!selectedFromStore) return productOptions
+    return productOptions.filter((product) => availableProductIds.has(product.id))
+  }, [productOptions, selectedFromStore, availableProductIds])
+
+  const filteredFilterProducts = useMemo(() => {
+    const query = filterProductSearch.trim().toLowerCase()
+    if (!query) return productOptions
+
+    return productOptions.filter((product) => {
+      const nameMatch = product.name.toLowerCase().includes(query)
+      const categoryMatch = product.category?.name?.toLowerCase().includes(query) || false
+      return nameMatch || categoryMatch
+    })
+  }, [productOptions, filterProductSearch])
+
+  const filteredIssueProducts = useMemo(() => {
+    const query = productSearch.trim().toLowerCase()
+    if (!query) return filteredProducts
+
+    return filteredProducts.filter((product) => {
+      const nameMatch = product.name.toLowerCase().includes(query)
+      const categoryMatch = product.category?.name?.toLowerCase().includes(query) || false
+      return nameMatch || categoryMatch
+    })
+  }, [filteredProducts, productSearch])
+
+  const selectedIssueProduct = useMemo(() => {
+    return productOptions.find((product) => product.id === formData.product_id)
+  }, [productOptions, formData.product_id])
+
+  useEffect(() => {
+    if (!filterProductId) {
+      setFilterProductSearch('')
+      return
+    }
+
+    const selectedProduct = productOptions.find((product) => product.id === filterProductId)
+    setFilterProductSearch(selectedProduct?.name || '')
+  }, [filterProductId, productOptions])
 
   // Pagination calculations
   const totalPages = Math.ceil(issues.length / itemsPerPage)
@@ -251,6 +319,7 @@ export default function IssuesList({
         ...prev,
         product_id: '',
       }))
+      setProductSearch('')
     }
   }, [filteredProducts, formData.product_id])
 
@@ -263,18 +332,52 @@ export default function IssuesList({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Filter by Product
             </label>
-            <select
-              value={filterProductId}
-              onChange={(e) => setFilterProductId(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-            >
-              <option value="">All Products</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name} ({product.category?.name})
-                </option>
-              ))}
-            </select>
+            <div ref={filterProductSearchRef} className="relative">
+              <input
+                type="text"
+                value={filterProductSearch}
+                onChange={(e) => {
+                  setFilterProductSearch(e.target.value)
+                  setShowFilterProductDropdown(true)
+                  if (!e.target.value) {
+                    setFilterProductId('')
+                  }
+                }}
+                onFocus={() => setShowFilterProductDropdown(true)}
+                placeholder="Search product..."
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+              />
+              {showFilterProductDropdown && filteredFilterProducts.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterProductId('')
+                      setFilterProductSearch('')
+                      setShowFilterProductDropdown(false)
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                  >
+                    <div className="font-medium text-gray-900">All Products</div>
+                  </button>
+                  {filteredFilterProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => {
+                        setFilterProductId(product.id)
+                        setFilterProductSearch(product.name)
+                        setShowFilterProductDropdown(false)
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                    >
+                      <div className="font-medium text-gray-900">{product.name}</div>
+                      <div className="text-xs text-gray-500">{product.category?.name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -303,6 +406,7 @@ export default function IssuesList({
           <button
             onClick={() => {
               setFilterProductId('')
+              setFilterProductSearch('')
               setFilterStartDate('')
               setFilterEndDate('')
             }}
@@ -372,6 +476,7 @@ export default function IssuesList({
                       to_store_id: '', // Reset when changing from store
                       product_id: '', // Reset product selection
                     })
+                    setProductSearch('')
                   }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
                 >
@@ -431,19 +536,55 @@ export default function IssuesList({
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Product *
                 </label>
-                <select
-                  required
-                  value={formData.product_id}
-                  onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-                >
-                  <option value="">Select a product</option>
-                  {filteredProducts.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} ({product.category?.name}) - {product.unit}
-                    </option>
-                  ))}
-                </select>
+                <div ref={productSearchRef} className="relative">
+                  <input
+                    type="text"
+                    value={productSearch}
+                    onChange={(e) => {
+                      setProductSearch(e.target.value)
+                      setShowProductDropdown(true)
+                      if (!e.target.value) {
+                        setFormData({ ...formData, product_id: '' })
+                      }
+                    }}
+                    onFocus={() => setShowProductDropdown(true)}
+                    placeholder="Search by name or category..."
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                  />
+                  {showProductDropdown && filteredIssueProducts.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      {filteredIssueProducts.map((product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() => {
+                            setFormData({ ...formData, product_id: product.id })
+                            setProductSearch(product.name)
+                            setShowProductDropdown(false)
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                        >
+                          <div className="font-medium text-gray-900">{product.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {product.category?.name} • {product.unit}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {showProductDropdown && productSearch && filteredIssueProducts.length === 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-4">
+                      <p className="text-sm text-gray-500 text-center">
+                        No matching products found
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {!selectedIssueProduct && formData.product_id && (
+                  <p className="mt-1 text-xs text-red-500">
+                    Please select a valid product
+                  </p>
+                )}
               </div>
 
               {formData.product_id && formData.from_store_id && (

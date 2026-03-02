@@ -13,6 +13,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
   const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
+    store_name: '',
     description: '',
     location: '',
     status: 'active',
@@ -27,6 +28,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
       const result = await updateProject({
         id: editingProject.id,
         name: formData.name || undefined,
+        store_name: formData.store_name || undefined,
         description: formData.description || undefined,
         location: formData.location || undefined,
         status: formData.status || undefined,
@@ -40,6 +42,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
     } else {
       const result = await createProject({
         name: formData.name,
+        store_name: formData.store_name || undefined,
         description: formData.description || undefined,
         location: formData.location || undefined,
         status: formData.status || 'active',
@@ -60,6 +63,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
     setEditingProject(project)
     setFormData({
       name: project.name,
+      store_name: project.project_store_name || '',
       description: project.description || '',
       location: project.location || '',
       status: project.status,
@@ -90,6 +94,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
             setEditingProject(null)
             setFormData({
               name: '',
+              store_name: '',
               description: '',
               location: '',
               status: 'active',
@@ -132,6 +137,18 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project Store Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.store_name}
+                  onChange={(e) => setFormData({ ...formData, store_name: e.target.value })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+                  placeholder="e.g., Site A Store"
                 />
               </div>
               <div>
@@ -180,6 +197,7 @@ export default function ProjectsList({ initialProjects }: { initialProjects: Pro
                     setError(null)
                     setFormData({
                       name: '',
+                      store_name: '',
                       description: '',
                       location: '',
                       status: 'active',

@@ -101,27 +101,39 @@ export async function getInventory(storeId?: string, productId?: string) {
     from += pageSize
   }
 
-  // Calculate average cost for each item (only for admins - others don't see prices)
-  const inventoryWithCosts = await Promise.all(
-    allInventoryItems.map(async (item) => {
-      let avgCost = 0
-      // Only admins can see costs/prices
-      if (isAdmin) {
-        const { data: avgCostData } = await supabase.rpc('get_average_cost', {
-          p_store_id: item.store_id,
-          p_product_id: item.product_id,
-        })
-        avgCost = avgCostData || 0
-      }
+  return { data: allInventoryItems as InventoryItem[], error: null }
+}
 
-      return {
-        ...item,
-        average_cost: avgCost,
-      } as InventoryItem
-    })
-  )
+export async function getInventoryAverageCost(storeId: string, productId: string) {
+  const supabase = await createClient()
 
-  return { data: inventoryWithCosts, error: null }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return { data: null, error: 'Not authenticated' }
+  }
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile || profile.role !== 'admin') {
+    return { data: null, error: 'Unauthorized: Admin access required' }
+  }
+
+  const { data, error } = await supabase.rpc('get_average_cost', {
+    p_store_id: storeId,
+    p_product_id: productId,
+  })
+
+  if (error) {
+    return { data: null, error: getErrorMessage(error) }
+  }
+
+  return { data: data || 0, error: null }
 }
 
 export async function getInventoryItem(storeId: string, productId: string) {

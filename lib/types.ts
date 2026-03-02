@@ -44,6 +44,7 @@ export interface Project {
   description: string | null
   location: string | null
   status: string
+  project_store_name?: string | null
   created_at: string
   updated_at: string
 }
@@ -172,6 +173,7 @@ export interface CreateProjectInput {
   description?: string
   location?: string
   status?: string
+  store_name?: string
 }
 
 export interface UpdateProjectInput {
@@ -180,6 +182,7 @@ export interface UpdateProjectInput {
   description?: string
   location?: string
   status?: string
+  store_name?: string
 }
 
 export interface CreateCategoryInput {

@@ -1,6 +1,7 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
+import { getInventoryAverageCost, getInventoryItemHistory } from '@/lib/actions/inventory'
 import type { InventoryItem, InventoryMovementEntry, Store } from '@/lib/types'
 import InventoryHistoryView from '@/app/components/InventoryHistoryView'
 
@@ -23,8 +24,47 @@ export default function InventoryView({
   const [searchName, setSearchName] = useState<string>('')
   const [searchCategory, setSearchCategory] = useState<string>('')
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  const [averageCostByItemId, setAverageCostByItemId] = useState<Record<string, number>>({})
+  const [averageCostLoadingByItemId, setAverageCostLoadingByItemId] = useState<Record<string, boolean>>({})
+  const [averageCostErrorByItemId, setAverageCostErrorByItemId] = useState<Record<string, string>>({})
+  const [historyByItemId, setHistoryByItemId] = useState<Record<string, InventoryMovementEntry[]>>(historyMap)
+  const [historyLoadingByItemId, setHistoryLoadingByItemId] = useState<Record<string, boolean>>({})
+  const [historyErrorByItemId, setHistoryErrorByItemId] = useState<Record<string, string>>({})
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
+
+  const toggleHistory = async (item: InventoryItem) => {
+    if (expandedItemId === item.id) {
+      setExpandedItemId(null)
+      return
+    }
+
+    setExpandedItemId(item.id)
+
+    const hasHistoryLoaded = Object.prototype.hasOwnProperty.call(historyByItemId, item.id)
+    if (hasHistoryLoaded || historyLoadingByItemId[item.id]) {
+      return
+    }
+
+    setHistoryLoadingByItemId((prev) => ({ ...prev, [item.id]: true }))
+    setHistoryErrorByItemId((prev) => ({ ...prev, [item.id]: '' }))
+
+    const { data, error } = await getInventoryItemHistory(item.store_id, item.product_id)
+
+    if (error) {
+      setHistoryErrorByItemId((prev) => ({
+        ...prev,
+        [item.id]: typeof error === 'string' ? error : 'Failed to load history',
+      }))
+    } else {
+      setHistoryByItemId((prev) => ({
+        ...prev,
+        [item.id]: (data as InventoryMovementEntry[]) || [],
+      }))
+    }
+
+    setHistoryLoadingByItemId((prev) => ({ ...prev, [item.id]: false }))
+  }
 
   // Get unique categories from inventory
   const categories = Array.from(
@@ -60,6 +100,55 @@ export default function InventoryView({
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedInventory = filteredInventory.slice(startIndex, endIndex)
+
+  useEffect(() => {
+    if (!isAdmin || paginatedInventory.length === 0) {
+      return
+    }
+
+    const loadAverageCostsForVisibleRows = async () => {
+      const missingItems = paginatedInventory.filter(
+        (item) =>
+          averageCostByItemId[item.id] === undefined &&
+          !averageCostLoadingByItemId[item.id] &&
+          !averageCostErrorByItemId[item.id]
+      )
+
+      if (missingItems.length === 0) {
+        return
+      }
+
+      setAverageCostLoadingByItemId((prev) => {
+        const next = { ...prev }
+        missingItems.forEach((item) => {
+          next[item.id] = true
+        })
+        return next
+      })
+
+      await Promise.all(
+        missingItems.map(async (item) => {
+          const { data, error } = await getInventoryAverageCost(item.store_id, item.product_id)
+
+          if (error) {
+            setAverageCostErrorByItemId((prev) => ({
+              ...prev,
+              [item.id]: typeof error === 'string' ? error : 'Failed to load cost',
+            }))
+          } else {
+            setAverageCostByItemId((prev) => ({
+              ...prev,
+              [item.id]: Number(data || 0),
+            }))
+          }
+
+          setAverageCostLoadingByItemId((prev) => ({ ...prev, [item.id]: false }))
+        })
+      )
+    }
+
+    loadAverageCostsForVisibleRows()
+  }, [isAdmin, paginatedInventory, averageCostByItemId, averageCostLoadingByItemId, averageCostErrorByItemId])
 
   // Reset to page 1 when filters change
   const handleFilterChange = () => {
@@ -232,20 +321,26 @@ export default function InventoryView({
                       </td>
                       {isAdmin && (
                         <td className={`px-6 py-4 whitespace-nowrap text-sm ${needsRestock ? 'text-red-700' : 'text-gray-900'}`}>
-                          PKR {item.average_cost?.toFixed(2) || '0.00'}
+                          {averageCostLoadingByItemId[item.id]
+                            ? 'Loading...'
+                            : averageCostErrorByItemId[item.id]
+                            ? 'N/A'
+                            : `PKR ${(averageCostByItemId[item.id] || 0).toFixed(2)}`}
                         </td>
                       )}
                       {isAdmin && (
                         <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${needsRestock ? 'text-red-800' : 'text-gray-900'}`}>
-                          PKR {((item.average_cost || 0) * item.quantity).toFixed(2)}
+                          {averageCostLoadingByItemId[item.id]
+                            ? 'Loading...'
+                            : averageCostErrorByItemId[item.id]
+                            ? 'N/A'
+                            : `PKR ${((averageCostByItemId[item.id] || 0) * item.quantity).toFixed(2)}`}
                         </td>
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           type="button"
-                          onClick={() =>
-                            setExpandedItemId((prev) => (prev === item.id ? null : item.id))
-                          }
+                          onClick={() => toggleHistory(item)}
                           className="inline-flex items-center rounded-md border border-[#0067ac] px-3 py-1 text-sm font-medium text-[#0067ac] hover:bg-[#0067ac] hover:text-white transition-colors"
                         >
                           {expandedItemId === item.id ? 'Hide History' : 'View History'}
@@ -255,10 +350,16 @@ export default function InventoryView({
                     {expandedItemId === item.id && (
                       <tr>
                         <td colSpan={isAdmin ? 7 : 5} className="px-6 py-4 bg-gray-50">
-                          {historyMap[item.id]?.length ? (
+                          {historyLoadingByItemId[item.id] ? (
+                            <div className="text-sm text-gray-500">Loading movement history...</div>
+                          ) : historyErrorByItemId[item.id] ? (
+                            <div className="text-sm text-red-600">
+                              {historyErrorByItemId[item.id]}
+                            </div>
+                          ) : historyByItemId[item.id]?.length ? (
                             <InventoryHistoryView
                               item={item}
-                              movements={historyMap[item.id]}
+                              movements={historyByItemId[item.id]}
                               hideMeta
                             />
                           ) : (

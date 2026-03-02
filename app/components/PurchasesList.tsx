@@ -28,6 +28,9 @@ export default function PurchasesList({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filterProductId, setFilterProductId] = useState<string>('')
+  const [filterProductSearch, setFilterProductSearch] = useState('')
+  const [showFilterProductDropdown, setShowFilterProductDropdown] = useState(false)
+  const filterProductSearchRef = useRef<HTMLDivElement>(null)
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
   const [productSearch, setProductSearch] = useState('')
@@ -51,6 +54,9 @@ export default function PurchasesList({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      if (filterProductSearchRef.current && !filterProductSearchRef.current.contains(event.target as Node)) {
+        setShowFilterProductDropdown(false)
+      }
       if (productSearchRef.current && !productSearchRef.current.contains(event.target as Node)) {
         setShowProductDropdown(false)
       }
@@ -78,6 +84,22 @@ export default function PurchasesList({
     })
   }, [productOptions, productSearch])
 
+  const filteredFilterProducts = useMemo(() => {
+    const query = filterProductSearch.trim().toLowerCase()
+
+    if (!query) {
+      return productOptions
+    }
+
+    return productOptions.filter((product) => {
+      const nameMatch = product.name.toLowerCase().includes(query)
+      const categoryMatch = product.category?.name
+        ? product.category.name.toLowerCase().includes(query)
+        : false
+      return nameMatch || categoryMatch
+    })
+  }, [productOptions, filterProductSearch])
+
   const productSelectOptions = useMemo(() => {
     const options = [...filteredProducts]
 
@@ -101,6 +123,16 @@ export default function PurchasesList({
   const selectedProduct = useMemo(() => {
     return productOptions.find((p) => p.id === formData.product_id)
   }, [productOptions, formData.product_id])
+
+  useEffect(() => {
+    if (!filterProductId) {
+      setFilterProductSearch('')
+      return
+    }
+
+    const selectedFilterProduct = productOptions.find((product) => product.id === filterProductId)
+    setFilterProductSearch(selectedFilterProduct?.name || '')
+  }, [filterProductId, productOptions])
 
   const handleProductSelect = (product: Product) => {
     setFormData({ ...formData, product_id: product.id })
@@ -274,18 +306,52 @@ export default function PurchasesList({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Filter by Product
             </label>
-            <select
-              value={filterProductId}
-              onChange={(e) => setFilterProductId(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
-            >
-              <option value="">All Products</option>
-              {productOptions.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name} ({product.category?.name})
-                </option>
-              ))}
-            </select>
+            <div ref={filterProductSearchRef} className="relative">
+              <input
+                type="text"
+                value={filterProductSearch}
+                onChange={(e) => {
+                  setFilterProductSearch(e.target.value)
+                  setShowFilterProductDropdown(true)
+                  if (!e.target.value) {
+                    setFilterProductId('')
+                  }
+                }}
+                onFocus={() => setShowFilterProductDropdown(true)}
+                placeholder="Search product..."
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:border-[#0067ac] focus:outline-none focus:ring-2 focus:ring-[#0067ac]"
+              />
+              {showFilterProductDropdown && filteredFilterProducts.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterProductId('')
+                      setFilterProductSearch('')
+                      setShowFilterProductDropdown(false)
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                  >
+                    <div className="font-medium text-gray-900">All Products</div>
+                  </button>
+                  {filteredFilterProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => {
+                        setFilterProductId(product.id)
+                        setFilterProductSearch(product.name)
+                        setShowFilterProductDropdown(false)
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                    >
+                      <div className="font-medium text-gray-900">{product.name}</div>
+                      <div className="text-xs text-gray-500">{product.category?.name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -314,6 +380,7 @@ export default function PurchasesList({
           <button
             onClick={() => {
               setFilterProductId('')
+              setFilterProductSearch('')
               setFilterStartDate('')
               setFilterEndDate('')
             }}

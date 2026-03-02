@@ -38,7 +38,21 @@ export async function createProject(input: CreateProjectInput) {
     return { error: getErrorMessage(error) }
   }
 
+  const requestedStoreName = input.store_name?.trim()
+  if (requestedStoreName) {
+    const { error: storeUpdateError } = await supabase
+      .from('stores')
+      .update({ name: requestedStoreName })
+      .eq('project_id', data.id)
+      .eq('type', 'project')
+
+    if (storeUpdateError) {
+      return { error: getErrorMessage(storeUpdateError) }
+    }
+  }
+
   revalidatePath('/projects')
+  revalidatePath('/stores')
   return { data, error: null }
 }
 
@@ -77,7 +91,25 @@ export async function updateProject(input: UpdateProjectInput) {
     return { error: getErrorMessage(error) }
   }
 
+  if (input.store_name !== undefined) {
+    const normalizedStoreName = input.store_name.trim()
+    if (!normalizedStoreName) {
+      return { error: 'Store name cannot be empty' }
+    }
+
+    const { error: storeUpdateError } = await supabase
+      .from('stores')
+      .update({ name: normalizedStoreName })
+      .eq('project_id', input.id)
+      .eq('type', 'project')
+
+    if (storeUpdateError) {
+      return { error: getErrorMessage(storeUpdateError) }
+    }
+  }
+
   revalidatePath('/projects')
+  revalidatePath('/stores')
   return { data, error: null }
 }
 
@@ -145,7 +177,33 @@ export async function getProjects() {
   }
 
   const { data, error } = await query
+  if (error || !data) {
+    return { data: null, error }
+  }
 
-  return { data, error }
+  const projectIds = data.map((project) => project.id)
+  let projectStoreNameMap = new Map<string, string>()
+
+  if (projectIds.length > 0) {
+    const { data: projectStores } = await supabase
+      .from('stores')
+      .select('project_id, name')
+      .eq('type', 'project')
+      .is('deleted_at', null)
+      .in('project_id', projectIds)
+
+    projectStoreNameMap = new Map(
+      (projectStores || [])
+        .filter((store) => !!store.project_id)
+        .map((store) => [store.project_id as string, store.name as string])
+    )
+  }
+
+  const projectsWithStoreNames = data.map((project) => ({
+    ...project,
+    project_store_name: projectStoreNameMap.get(project.id) || null,
+  }))
+
+  return { data: projectsWithStoreNames, error: null }
 }
 
